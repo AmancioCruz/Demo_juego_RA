@@ -77,7 +77,7 @@ function cargarModeloLapiz() {
     undefined,
     () => {
       modeloBase = crearLapizRespaldo()
-      mensaje.value = 'No se pudo cargar el GLB del lapiz. Revisa public/modelos/lapiz.glb.'
+      mensaje.value = `No se pudo cargar el GLB del lapiz desde ${props.sticker.modelo3d}.`
     },
   )
 }

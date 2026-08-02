@@ -68,7 +68,7 @@ function cargarModelo() {
       mensaje.value = `Cargando modelo ${avance}%`
     },
     () => {
-      mensaje.value = 'No se pudo cargar el modelo de Renato.'
+      mensaje.value = `No se pudo cargar Renato desde ${sticker.value.modeloVista3d}`
     },
   )
 }
