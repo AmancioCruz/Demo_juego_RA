@@ -11,6 +11,7 @@ const cargando = ref(false)
 const mensaje = ref('')
 const stickerDesbloqueado = ref(null)
 let flujoCamara
+let temporizadorEscaneo
 
 async function activarCamara() {
   if (cargando.value || camaraActiva.value) return
@@ -38,6 +39,7 @@ async function activarCamara() {
     await videoRef.value.play()
     camaraActiva.value = true
     mensaje.value = 'Alinea el codigo dentro del marco.'
+    iniciarEscaneoAutomatico()
   } catch {
     mensaje.value = 'No se pudo abrir la camara. Revisa permisos o usa localhost/HTTPS.'
   } finally {
@@ -46,9 +48,18 @@ async function activarCamara() {
 }
 
 function detenerCamara() {
+  clearTimeout(temporizadorEscaneo)
   flujoCamara?.getTracks().forEach((track) => track.stop())
   flujoCamara = null
   camaraActiva.value = false
+}
+
+function iniciarEscaneoAutomatico() {
+  clearTimeout(temporizadorEscaneo)
+  temporizadorEscaneo = setTimeout(() => {
+    if (!camaraActiva.value || stickerDesbloqueado.value) return
+    desbloquearSticker()
+  }, 2600)
 }
 
 function desbloquearSticker() {
@@ -70,12 +81,6 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="contenedor-vista escanear-vista">
-    <header class="encabezado-vista">
-      <p class="etiqueta">Escaner</p>
-      <h1>Escanear sticker</h1>
-      <p>Apunta la camara al codigo para desbloquear el sticker del lapiz.</p>
-    </header>
-
     <section class="camara-qr">
       <video
         ref="videoRef"
@@ -95,32 +100,37 @@ onBeforeUnmount(() => {
         <span>{{ cargando ? 'Abriendo camara...' : 'Camara lista' }}</span>
       </div>
 
+      <div class="barra-superior">
+        <RouterLink to="/" aria-label="Volver a inicio">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M15.5 5 8.5 12l7 7-1.8 1.8L4.9 12l8.8-8.8z" />
+          </svg>
+        </RouterLink>
+        <strong>Escaner</strong>
+      </div>
+
       <div class="marco-escaneo" aria-hidden="true">
         <span></span>
         <span></span>
         <span></span>
         <span></span>
       </div>
+
+      <div class="panel-observacion" :class="{ 'panel-observacion--exito': stickerDesbloqueado }">
+        <p role="status">{{ mensaje || 'Activa la camara para escanear.' }}</p>
+
+        <BotonApp v-if="!camaraActiva" bloque variante="secundario" :disabled="cargando" @click="activarCamara">
+          Activar camara
+        </BotonApp>
+
+        <div v-if="stickerDesbloqueado" class="acciones-escaner">
+          <RouterLink class="boton-album" to="/album">Ver en album</RouterLink>
+          <RouterLink class="boton-jugar" :to="{ name: 'juego', params: { id: stickerDesbloqueado.id } }">
+            Jugar
+          </RouterLink>
+        </div>
+      </div>
     </section>
-
-    <p v-if="mensaje" class="mensaje-escaneo" role="status">{{ mensaje }}</p>
-
-    <div class="acciones-escaner">
-      <BotonApp v-if="!stickerDesbloqueado" bloque :disabled="cargando" @click="desbloquearSticker">
-        Escanear codigo
-      </BotonApp>
-
-      <template v-else>
-        <RouterLink class="boton-album" to="/album">Ver en album</RouterLink>
-        <RouterLink class="boton-jugar" :to="{ name: 'juego', params: { id: stickerDesbloqueado.id } }">
-          Jugar
-        </RouterLink>
-      </template>
-    </div>
-
-    <BotonApp v-if="!camaraActiva" bloque variante="secundario" :disabled="cargando" @click="activarCamara">
-      Activar camara
-    </BotonApp>
   </div>
 </template>
 
@@ -128,11 +138,12 @@ onBeforeUnmount(() => {
 .escanear-vista {
   display: grid;
   gap: 14px;
+  min-height: calc(100vh - 108px);
 }
 
 .camara-qr {
   position: relative;
-  min-height: 480px;
+  min-height: calc(100vh - 136px);
   overflow: hidden;
   border-radius: 28px;
   background:
@@ -174,6 +185,44 @@ onBeforeUnmount(() => {
 
 .estado-camara span {
   font-weight: 900;
+}
+
+.barra-superior {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  left: 14px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #fff;
+  pointer-events: none;
+}
+
+.barra-superior a {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 47, 83, 0.58);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.barra-superior svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
+.barra-superior strong {
+  padding: 10px 12px;
+  border-radius: 999px;
+  background: rgba(16, 47, 83, 0.58);
+  font-size: 0.82rem;
+  backdrop-filter: blur(12px);
 }
 
 .marco-escaneo {
@@ -224,24 +273,39 @@ onBeforeUnmount(() => {
   border-radius: 0 0 0 16px;
 }
 
-.mensaje-escaneo {
-  margin: 0;
-  padding: 12px;
-  border-radius: 14px;
-  color: var(--azul);
-  background: var(--azul-claro);
-  font-size: 0.88rem;
+.panel-observacion {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  left: 14px;
+  z-index: 5;
+  padding: 14px;
+  border-radius: 20px;
+  color: #fff;
+  background: rgba(16, 47, 83, 0.72);
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(14px);
+}
+
+.panel-observacion--exito {
+  background: rgba(0, 87, 168, 0.82);
+}
+
+.panel-observacion p {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
   font-weight: 900;
+  line-height: 1.35;
+}
+
+.panel-observacion p:last-child {
+  margin-bottom: 0;
 }
 
 .acciones-escaner {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-}
-
-.acciones-escaner > .boton-app {
-  grid-column: 1 / -1;
 }
 
 .boton-album,

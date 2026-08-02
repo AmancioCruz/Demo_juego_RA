@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useAlbumStore } from '@/stores/album'
-import JuegoLapizAr from '@/componentes/ar/JuegoLapizAr.vue'
+import JuegoBuscarRenatoAr from '@/componentes/ar/JuegoBuscarRenatoAr.vue'
 import BotonApp from '@/componentes/interfaz/BotonApp.vue'
 import TarjetaApp from '@/componentes/interfaz/TarjetaApp.vue'
 
@@ -43,12 +43,12 @@ function iniciarJuego() {
             </svg>
           </div>
           <h2>Listo para jugar</h2>
-          <p>Toca 20 lapices en la camara para completar la actividad.</p>
+          <p>Mueve la camara para buscar a Renato y tocalo cuando aparezca.</p>
           <BotonApp bloque @click="iniciarJuego">Jugar</BotonApp>
         </TarjetaApp>
       </section>
 
-      <JuegoLapizAr v-else :sticker="sticker" />
+      <JuegoBuscarRenatoAr v-else :sticker="sticker" />
     </template>
 
     <TarjetaApp v-else class="juego-bloqueado">

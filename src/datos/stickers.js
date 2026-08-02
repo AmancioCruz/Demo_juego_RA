@@ -12,12 +12,12 @@ export const stickersIniciales = [
     imagen: stickerLapiz,
     modeloVista3d: `${rutaBase}modelos/renato.glb`,
     modelo3d: `${rutaBase}modelos/lapiz.glb`,
-    desbloqueado: false,
+    desbloqueado: true,
     juego: {
-      titulo: 'Atrapa los lapices',
-      descripcion: 'Toca los lapices que aparecen en realidad aumentada antes de que caigan.',
-      objetivo: 'Toca 20 lapices',
-      elementos: ['Lapiz'],
+      titulo: 'Encuentra a Renato',
+      descripcion: 'Mueve la camara para buscar a Renato escondido en realidad aumentada.',
+      objetivo: 'Encuentra a Renato 3 veces',
+      elementos: ['Renato'],
     },
   },
 ]
