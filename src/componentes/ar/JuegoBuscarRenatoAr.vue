@@ -33,19 +33,6 @@ let baseBeta
 let arrastrando = false
 let puntoArrastre = { x: 0, y: 0 }
 
-function crearRenatoRespaldo() {
-  const grupo = new THREE.Group()
-  const material = new THREE.MeshStandardMaterial({ color: '#0057a8', roughness: 0.38 })
-  const cuerpo = new THREE.Mesh(new THREE.CapsuleGeometry(0.34, 0.86, 8, 18), material)
-  const cabeza = new THREE.Mesh(
-    new THREE.SphereGeometry(0.32, 24, 24),
-    new THREE.MeshStandardMaterial({ color: '#f0c7a3', roughness: 0.42 }),
-  )
-  cabeza.position.y = 0.82
-  grupo.add(cuerpo, cabeza)
-  return grupo
-}
-
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
     if (objeto.isMesh) {
@@ -67,7 +54,7 @@ function prepararModelo(modelo) {
   caja.getSize(tamano)
 
   const dimensionMayor = Math.max(tamano.x, tamano.y, tamano.z) || 1
-  const escala = 1.15 / dimensionMayor
+  const escala = 1.55 / dimensionMayor
   modelo.scale.setScalar(escala)
   modelo.position.set(-centro.x * escala, -centro.y * escala, -centro.z * escala)
   modelo.rotation.y = -0.25
@@ -91,10 +78,6 @@ function cargarModeloRenato() {
       mensaje.value = `Cargando Renato ${avance}%`
     },
     () => {
-      modeloRenato = crearRenatoRespaldo()
-      modeloRenato.visible = false
-      escena.add(modeloRenato)
-      esconderRenato()
       mensaje.value = `No se pudo cargar Renato desde ${props.sticker.modeloVista3d}.`
     },
   )
@@ -102,13 +85,13 @@ function cargarModeloRenato() {
 
 function esconderRenato() {
   if (!modeloRenato || encontrados.value >= meta) return
-  const lejosDelCentro = THREE.MathUtils.randFloat(1.15, 2.75)
+  const lejosDelCentro = THREE.MathUtils.randFloat(0.75, 1.45)
   const direccionX = Math.random() > 0.5 ? 1 : -1
   const direccionY = Math.random() > 0.5 ? 1 : -1
   posicionObjetivo.set(
     lejosDelCentro * direccionX,
-    THREE.MathUtils.randFloat(0.15, 1.85) * direccionY,
-    THREE.MathUtils.randFloat(-0.35, 0.55),
+    THREE.MathUtils.randFloat(0.1, 0.95) * direccionY,
+    THREE.MathUtils.randFloat(-0.18, 0.32),
   )
   modeloRenato.position.set(posicionObjetivo.x, posicionObjetivo.y, posicionObjetivo.z)
   modeloRenato.visible = true
@@ -133,7 +116,7 @@ function actualizarObjetivoTactil() {
   posicion.project(camara)
 
   const distanciaCentro = Math.hypot(posicion.x, posicion.y)
-  const visible = posicion.z > -1 && posicion.z < 1 && distanciaCentro < 0.72
+  const visible = posicion.z > -1 && posicion.z < 1 && distanciaCentro < 1.05
 
   objetivoRenato.value = {
     izquierda: `${((posicion.x + 1) / 2) * 100}%`,
@@ -141,7 +124,16 @@ function actualizarObjetivoTactil() {
     visible,
   }
 
-  pista.value = visible ? 'Renato esta cerca. Tocalo para encontrarlo.' : 'Mueve la camara para buscar a Renato.'
+  if (visible) {
+    pista.value = 'Renato esta cerca. Tocalo para encontrarlo.'
+    return
+  }
+
+  const direccionHorizontal =
+    posicion.x > 0.18 ? 'a la derecha' : posicion.x < -0.18 ? 'a la izquierda' : ''
+  const direccionVertical = posicion.y > 0.18 ? 'arriba' : posicion.y < -0.18 ? 'abajo' : ''
+  const direccion = [direccionHorizontal, direccionVertical].filter(Boolean).join(' y ')
+  pista.value = direccion ? `Busca ${direccion}.` : 'Mueve un poco la camara.'
 }
 
 function encontrarRenato() {
@@ -154,7 +146,9 @@ function encontrarRenato() {
     return
   }
   pista.value = 'Bien. Renato se escondio otra vez.'
-  esconderRenato()
+  modeloRenato.visible = false
+  objetivoRenato.value = null
+  setTimeout(() => esconderRenato(), 420)
 }
 
 function iniciarEscena() {
@@ -347,7 +341,9 @@ onBeforeUnmount(() => {
         aria-label="Encontrar a Renato"
         @click.stop="encontrarRenato"
         @touchstart.stop.prevent="encontrarRenato"
-      ></button>
+      >
+        <span>Renato</span>
+      </button>
 
       <div class="guia-control">
         <p>{{ pista }}</p>
@@ -499,12 +495,26 @@ onBeforeUnmount(() => {
 .objetivo-renato {
   position: absolute;
   z-index: 7;
-  width: 120px;
-  height: 120px;
-  border: 2px solid rgba(255, 255, 255, 0.68);
+  width: 128px;
+  height: 128px;
+  border: 2px solid rgba(255, 255, 255, 0.78);
   border-radius: 50%;
-  background: rgba(215, 25, 32, 0.12);
+  display: grid;
+  place-items: end center;
+  padding-bottom: 8px;
+  color: #fff;
+  background: rgba(215, 25, 32, 0.08);
+  box-shadow: 0 0 0 8px rgba(255, 255, 255, 0.1);
   transform: translate(-50%, -50%);
+}
+
+.objetivo-renato span {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(16, 47, 83, 0.7);
+  font-size: 0.72rem;
+  font-weight: 900;
+  backdrop-filter: blur(10px);
 }
 
 .objetivo-renato:active {
