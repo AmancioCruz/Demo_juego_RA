@@ -1,4 +1,4 @@
-import { createRouter, createWebHistory } from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import InicioVista from '@/vistas/InicioVista.vue'
 import AlbumVista from '@/vistas/AlbumVista.vue'
 import EscanearVista from '@/vistas/EscanearVista.vue'
@@ -7,7 +7,7 @@ import JuegoVista from '@/vistas/JuegoVista.vue'
 import RealidadAumentadaVista from '@/vistas/RealidadAumentadaVista.vue'
 
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHashHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', name: 'inicio', component: InicioVista },
     { path: '/album', name: 'album', component: AlbumVista },
