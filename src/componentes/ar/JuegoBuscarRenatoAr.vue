@@ -333,17 +333,18 @@ async function capturarDesdeFrameXr(frame) {
 }
 
 async function crearBlobFoto(frame) {
-  const lienzoCamara = obtenerLienzoCamaraXr(frame)
-  if (!lienzoCamara) return null
+  const capturaCamara = obtenerCapturaCamaraXr(frame)
+  if (!capturaCamara) return null
 
-  const origen = renderizador.domElement
+  const lienzoCamara = capturaCamara.lienzo
+  const lienzoModelo = crearLienzoModeloXr(capturaCamara.vista, lienzoCamara.width, lienzoCamara.height)
   const lienzo = document.createElement('canvas')
   lienzo.width = lienzoCamara.width
   lienzo.height = lienzoCamara.height
   const contexto = lienzo.getContext('2d')
 
   contexto.drawImage(lienzoCamara, 0, 0, lienzo.width, lienzo.height)
-  contexto.drawImage(origen, 0, 0, lienzo.width, lienzo.height)
+  if (lienzoModelo) contexto.drawImage(lienzoModelo, 0, 0, lienzo.width, lienzo.height)
   const altoBanda = Math.max(88, lienzo.height * 0.12)
   contexto.fillStyle = 'rgba(6, 35, 64, 0.78)'
   contexto.fillRect(0, lienzo.height - altoBanda, lienzo.width, altoBanda)
@@ -357,7 +358,7 @@ async function crearBlobFoto(frame) {
   })
 }
 
-function obtenerLienzoCamaraXr(frame) {
+function obtenerCapturaCamaraXr(frame) {
   if (!enlaceGlCamara || !espacioReferencia) return null
 
   const pose = frame.getViewerPose(espacioReferencia)
@@ -369,7 +370,43 @@ function obtenerLienzoCamaraXr(frame) {
 
   const ancho = vista.camera.width || renderizador.domElement.width
   const alto = vista.camera.height || renderizador.domElement.height
-  return copiarTexturaCamaraACanvas(texturaCamara, ancho, alto)
+  const lienzo = copiarTexturaCamaraACanvas(texturaCamara, ancho, alto)
+  return { lienzo, vista }
+}
+
+function crearLienzoModeloXr(vista, ancho, alto) {
+  if (!vista || !modeloRenato?.visible) return null
+
+  const lienzo = document.createElement('canvas')
+  const renderizadorFoto = new THREE.WebGLRenderer({
+    canvas: lienzo,
+    alpha: true,
+    antialias: true,
+    preserveDrawingBuffer: true,
+  })
+  renderizadorFoto.outputColorSpace = THREE.SRGBColorSpace
+  renderizadorFoto.toneMapping = THREE.ACESFilmicToneMapping
+  renderizadorFoto.toneMappingExposure = renderizador.toneMappingExposure
+  renderizadorFoto.setPixelRatio(1)
+  renderizadorFoto.setSize(ancho, alto, false)
+  renderizadorFoto.setClearColor(0x000000, 0)
+  renderizadorFoto.autoClear = true
+
+  const camaraFoto = new THREE.PerspectiveCamera()
+  camaraFoto.projectionMatrix.fromArray(vista.projectionMatrix)
+  camaraFoto.projectionMatrixInverse.copy(camaraFoto.projectionMatrix).invert()
+  camaraFoto.matrixWorld.fromArray(vista.transform.matrix)
+  camaraFoto.matrixWorldInverse.copy(camaraFoto.matrixWorld).invert()
+  camaraFoto.matrixAutoUpdate = false
+
+  const reticuloVisible = reticulo?.visible
+  if (reticulo) reticulo.visible = false
+  escena.updateMatrixWorld(true)
+  renderizadorFoto.render(escena, camaraFoto)
+  if (reticulo) reticulo.visible = reticuloVisible
+
+  renderizadorFoto.dispose()
+  return lienzo
 }
 
 function copiarTexturaCamaraACanvas(texturaCamara, ancho, alto) {
