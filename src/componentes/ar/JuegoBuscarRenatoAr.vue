@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import BotonApp from '@/componentes/interfaz/BotonApp.vue'
@@ -9,7 +8,6 @@ const props = defineProps({
   sticker: { type: Object, required: true },
 })
 
-const router = useRouter()
 const contenedorRef = ref(null)
 const mensaje = ref('')
 const estadoRa = ref('Preparando a Renato...')
@@ -18,10 +16,11 @@ const sesionActiva = ref(false)
 const planoEncontrado = ref(false)
 const modeloColocado = ref(false)
 const fotoOcupada = ref(false)
+const avisoColocadoVisible = ref(false)
+const avisoColocadoCerrado = ref(false)
 
 const instruccionPrincipal = computed(() => {
   if (!sesionActiva.value) return 'Inicia la experiencia para colocar a Renato en tu espacio.'
-  if (modeloColocado.value) return 'Renato ya esta colocado. Rodealo con tu celular para verlo completo.'
   if (planoEncontrado.value) return 'Superficie lista. Toca la pantalla para colocar a Renato.'
   return 'Busca una superficie plana y toca la pantalla para colocar a Renato.'
 })
@@ -38,6 +37,7 @@ let espacioVisor
 let fuenteHitTest
 let hitTestSolicitado = false
 let anchorRenato
+let temporizadorAvisoColocado
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -211,6 +211,7 @@ async function colocarModeloEnReticulo() {
   modeloColocado.value = true
   reticulo.visible = false
   estadoRa.value = 'Renato quedo fijo en tu espacio.'
+  mostrarAvisoColocado()
 
   const resultado = reticulo.userData.hitTestResult
   if (resultado && typeof resultado.createAnchor === 'function') {
@@ -264,6 +265,9 @@ function renderizarFrameXr(timestamp, frame) {
 function reiniciar() {
   modeloColocado.value = false
   planoEncontrado.value = false
+  avisoColocadoVisible.value = false
+  avisoColocadoCerrado.value = false
+  window.clearTimeout(temporizadorAvisoColocado)
   anchorRenato?.delete?.()
   anchorRenato = null
   if (modeloRenato) modeloRenato.visible = false
@@ -271,6 +275,21 @@ function reiniciar() {
   estadoRa.value = sesionActiva.value
     ? 'Escaneando superficies planas.'
     : 'Listo para iniciar la colocacion de Renato.'
+}
+
+function mostrarAvisoColocado() {
+  if (avisoColocadoCerrado.value) return
+  avisoColocadoVisible.value = true
+  window.clearTimeout(temporizadorAvisoColocado)
+  temporizadorAvisoColocado = window.setTimeout(() => {
+    avisoColocadoVisible.value = false
+  }, 4200)
+}
+
+function cerrarAvisoColocado() {
+  avisoColocadoCerrado.value = true
+  avisoColocadoVisible.value = false
+  window.clearTimeout(temporizadorAvisoColocado)
 }
 
 async function capturarFoto() {
@@ -333,9 +352,26 @@ async function crearBlobFoto() {
 async function salirExperiencia() {
   try {
     if (sesionXr) await sesionXr.end()
+    liberarRecursosRa()
   } finally {
-    router.back()
+    window.location.replace(obtenerRutaInicio())
   }
+}
+
+function obtenerRutaInicio() {
+  return `${window.location.origin}${window.location.pathname}#/`
+}
+
+function liberarRecursosRa() {
+  window.clearTimeout(temporizadorAvisoColocado)
+  fuenteHitTest?.cancel?.()
+  fuenteHitTest = null
+  anchorRenato?.delete?.()
+  anchorRenato = null
+  controlador?.removeEventListener('select', colocarModeloEnReticulo)
+  renderizador?.setAnimationLoop(null)
+  renderizador?.dispose()
+  renderizador?.domElement?.remove()
 }
 
 function ajustarTamano() {
@@ -355,11 +391,8 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', ajustarTamano)
-  controlador?.removeEventListener('select', colocarModeloEnReticulo)
   sesionXr?.end?.()
-  renderizador?.setAnimationLoop(null)
-  renderizador?.dispose()
-  renderizador?.domElement?.remove()
+  liberarRecursosRa()
 })
 </script>
 
@@ -373,12 +406,12 @@ onBeforeUnmount(() => {
 
     <div ref="contenedorRef" class="escena-renato">
       <div class="overlay-xr">
-        <div class="estado-xr">
+        <div v-if="!sesionActiva" class="estado-xr">
           <span :class="{ 'estado-xr__punto--activo': planoEncontrado || modeloColocado }"></span>
           <p>{{ estadoRa }}</p>
         </div>
 
-        <div v-if="sesionActiva" class="instruccion-principal">
+        <div v-if="sesionActiva && !modeloColocado" class="instruccion-principal">
           <div class="icono-instruccion">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path
@@ -387,6 +420,11 @@ onBeforeUnmount(() => {
             </svg>
           </div>
           <p>{{ instruccionPrincipal }}</p>
+        </div>
+
+        <div v-if="modeloColocado && avisoColocadoVisible" class="aviso-colocado">
+          <p>Renato quedo colocado. Rodealo para verlo completo.</p>
+          <button type="button" aria-label="Cerrar aviso" @click="cerrarAvisoColocado">×</button>
         </div>
 
         <div v-if="sesionActiva" class="acciones-xr">
@@ -543,6 +581,45 @@ onBeforeUnmount(() => {
   font-size: 1rem;
   font-weight: 950;
   line-height: 1.25;
+}
+
+.aviso-colocado {
+  align-self: end;
+  justify-self: center;
+  width: min(92%, 390px);
+  margin-bottom: 84px;
+  padding: 10px 10px 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 18px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+  color: #fff;
+  background: rgba(6, 35, 64, 0.78);
+  box-shadow: 0 14px 30px rgba(6, 35, 64, 0.22);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+}
+
+.aviso-colocado p {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 900;
+  line-height: 1.25;
+}
+
+.aviso-colocado button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  color: var(--azul);
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 1.2rem;
+  font-weight: 900;
 }
 
 .acciones-xr {
