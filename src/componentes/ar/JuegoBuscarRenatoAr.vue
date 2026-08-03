@@ -20,6 +20,8 @@ const objetivoRenato = ref(null)
 const puedePedirMovimiento = ref(false)
 const superficieDetectada = ref(false)
 const nombreSuperficie = ref('superficie firme')
+const progresoMapeo = ref(0)
+const puntosMapeo = ref([])
 
 let escena
 let camara
@@ -27,7 +29,8 @@ let renderizador
 let modeloRenato
 let animacionId
 let flujoCamara
-let temporizadorSuperficie
+let intervaloMapeo
+let idPuntoMapeo = 0
 let posicionObjetivo = new THREE.Vector3()
 let vistaX = 0
 let vistaY = 0
@@ -112,16 +115,38 @@ function cargarModeloRenato() {
 }
 
 function iniciarDeteccionSuperficie() {
-  if (superficieDetectada.value || temporizadorSuperficie) return
+  if (superficieDetectada.value || intervaloMapeo) return
 
-  pista.value = 'Buscando una superficie firme...'
-  temporizadorSuperficie = window.setTimeout(() => {
+  pista.value = 'Mapeando el espacio. Mueve la camara despacio.'
+  progresoMapeo.value = 0
+  puntosMapeo.value = []
+
+  intervaloMapeo = window.setInterval(() => {
+    progresoMapeo.value = Math.min(100, progresoMapeo.value + THREE.MathUtils.randInt(9, 16))
+    agregarPuntosMapeo()
+
+    if (progresoMapeo.value < 100) return
+
+    window.clearInterval(intervaloMapeo)
+    intervaloMapeo = undefined
     const superficies = ['suelo', 'mesa', 'silla']
     nombreSuperficie.value = superficies[Math.floor(Math.random() * superficies.length)]
     superficieDetectada.value = true
-    pista.value = `Superficie detectada: ${nombreSuperficie.value}. Busca a Renato cerca de ahi.`
+    pista.value = `Plano firme detectado: ${nombreSuperficie.value}. Renato puede esconderse ahi.`
     esconderRenato()
-  }, 1200)
+  }, 220)
+}
+
+function agregarPuntosMapeo() {
+  const nuevosPuntos = Array.from({ length: 7 }, () => ({
+    id: idPuntoMapeo++,
+    izquierda: `${THREE.MathUtils.randFloat(8, 92)}%`,
+    arriba: `${THREE.MathUtils.randFloat(24, 82)}%`,
+    tamano: `${THREE.MathUtils.randFloat(5, 9)}px`,
+    retraso: `${THREE.MathUtils.randFloat(0, 0.6)}s`,
+  }))
+
+  puntosMapeo.value = [...puntosMapeo.value, ...nuevosPuntos].slice(-48)
 }
 
 function esconderRenato() {
@@ -345,7 +370,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', ajustarTamano)
   window.removeEventListener('pointerup', terminarArrastre)
   window.removeEventListener('deviceorientation', manejarOrientacion)
-  window.clearTimeout(temporizadorSuperficie)
+  window.clearInterval(intervaloMapeo)
   cancelAnimationFrame(animacionId)
   renderizador?.dispose()
   renderizador?.domElement?.remove()
@@ -383,11 +408,34 @@ onBeforeUnmount(() => {
 
       <div class="mira-centro" aria-hidden="true"></div>
 
-      <div v-if="camaraActiva && superficieDetectada" class="superficie-visual" aria-hidden="true"></div>
+      <div v-if="camaraActiva" class="capa-mapeo" aria-hidden="true">
+        <span
+          v-for="punto in puntosMapeo"
+          :key="punto.id"
+          class="punto-mapeo"
+          :style="{
+            left: punto.izquierda,
+            top: punto.arriba,
+            width: punto.tamano,
+            height: punto.tamano,
+            animationDelay: punto.retraso,
+          }"
+        ></span>
+      </div>
+
+      <div v-if="camaraActiva && superficieDetectada" class="superficie-visual" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
 
       <div v-if="camaraActiva" class="superficie-indicador">
         <span :class="{ 'superficie-indicador__punto--activo': superficieDetectada }"></span>
-        {{ superficieDetectada ? `Detectado: ${nombreSuperficie}` : 'Detectando superficie' }}
+        {{
+          superficieDetectada
+            ? `Plano detectado: ${nombreSuperficie}`
+            : `Mapeando espacio ${progresoMapeo}%`
+        }}
       </div>
 
       <button
@@ -549,20 +597,47 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
+.capa-mapeo {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.punto-mapeo {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 213, 79, 0.92);
+  box-shadow:
+    0 0 0 4px rgba(255, 213, 79, 0.16),
+    0 0 18px rgba(255, 255, 255, 0.45);
+  animation: pulso-mapeo 1.35s ease-in-out infinite;
+}
+
 .superficie-visual {
   position: absolute;
   right: 10%;
   bottom: 76px;
   left: 10%;
   z-index: 3;
-  height: 76px;
+  height: 92px;
   border-radius: 50%;
   background:
-    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.06) 54%, transparent 72%),
+    linear-gradient(90deg, rgba(255, 213, 79, 0.22) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(255, 213, 79, 0.22) 1px, transparent 1px),
+    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.34), rgba(255, 255, 255, 0.08) 54%, transparent 74%),
     radial-gradient(ellipse at center, rgba(6, 35, 64, 0.32), transparent 66%);
+  background-size:
+    28px 28px,
+    28px 28px,
+    100% 100%,
+    100% 100%;
   border: 1px solid rgba(255, 255, 255, 0.28);
   transform: perspective(280px) rotateX(58deg);
+  transform-origin: center bottom;
   pointer-events: none;
+  box-shadow: 0 0 34px rgba(255, 213, 79, 0.18);
 }
 
 .superficie-visual::after {
@@ -575,6 +650,30 @@ onBeforeUnmount(() => {
   background: rgba(6, 35, 64, 0.26);
   content: '';
   filter: blur(2px);
+}
+
+.superficie-visual span {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 16px rgba(255, 213, 79, 0.72);
+}
+
+.superficie-visual span:nth-child(1) {
+  top: 32%;
+  left: 22%;
+}
+
+.superficie-visual span:nth-child(2) {
+  top: 54%;
+  left: 52%;
+}
+
+.superficie-visual span:nth-child(3) {
+  top: 38%;
+  right: 18%;
 }
 
 .superficie-indicador {
@@ -710,5 +809,18 @@ onBeforeUnmount(() => {
   background: var(--azul-claro);
   font-size: 0.85rem;
   font-weight: 900;
+}
+
+@keyframes pulso-mapeo {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
 }
 </style>
