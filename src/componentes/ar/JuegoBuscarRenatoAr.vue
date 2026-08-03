@@ -35,7 +35,8 @@ let baseGamma
 let baseBeta
 let arrastrando = false
 let puntoArrastre = { x: 0, y: 0 }
-const alturaSuperficie = -1.22
+const alturaSuperficie = -1.42
+const alturaObjetivoTactil = 0.92
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -60,7 +61,13 @@ function prepararModelo(modelo) {
   const dimensionMayor = Math.max(tamano.x, tamano.y, tamano.z) || 1
   const escala = 1.55 / dimensionMayor
   modelo.scale.setScalar(escala)
-  modelo.position.set(-centro.x * escala, -caja.min.y * escala, -centro.z * escala)
+  modelo.position.set(0, 0, 0)
+  modelo.updateWorldMatrix(true, true)
+
+  const cajaEscalada = new THREE.Box3().setFromObject(modelo)
+  const centroEscalado = new THREE.Vector3()
+  cajaEscalada.getCenter(centroEscalado)
+  modelo.position.set(-centroEscalado.x, -cajaEscalada.min.y, -centroEscalado.z)
   modelo.rotation.y = -0.25
   return modelo
 }
@@ -128,7 +135,7 @@ function esconderRenato() {
   posicionObjetivo.set(
     lejosDelCentro * direccionX,
     alturaSuperficie,
-    THREE.MathUtils.randFloat(-0.18, 0.32),
+    THREE.MathUtils.randFloat(-0.35, 0.08),
   )
   modeloRenato.position.set(posicionObjetivo.x, posicionObjetivo.y, posicionObjetivo.z)
   modeloRenato.visible = true
@@ -150,7 +157,7 @@ function actualizarObjetivoTactil() {
 
   const posicion = new THREE.Vector3()
   modeloRenato.getWorldPosition(posicion)
-  posicion.y += 0.76
+  posicion.y += alturaObjetivoTactil
   posicion.project(camara)
 
   const distanciaCentro = Math.hypot(posicion.x, posicion.y)
@@ -376,6 +383,8 @@ onBeforeUnmount(() => {
 
       <div class="mira-centro" aria-hidden="true"></div>
 
+      <div v-if="camaraActiva && superficieDetectada" class="superficie-visual" aria-hidden="true"></div>
+
       <div v-if="camaraActiva" class="superficie-indicador">
         <span :class="{ 'superficie-indicador__punto--activo': superficieDetectada }"></span>
         {{ superficieDetectada ? `Detectado: ${nombreSuperficie}` : 'Detectando superficie' }}
@@ -540,6 +549,34 @@ onBeforeUnmount(() => {
   transform: translateX(-50%);
 }
 
+.superficie-visual {
+  position: absolute;
+  right: 10%;
+  bottom: 76px;
+  left: 10%;
+  z-index: 3;
+  height: 76px;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at center, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.06) 54%, transparent 72%),
+    radial-gradient(ellipse at center, rgba(6, 35, 64, 0.32), transparent 66%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  transform: perspective(280px) rotateX(58deg);
+  pointer-events: none;
+}
+
+.superficie-visual::after {
+  position: absolute;
+  right: 22%;
+  bottom: 26px;
+  left: 22%;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(6, 35, 64, 0.26);
+  content: '';
+  filter: blur(2px);
+}
+
 .superficie-indicador {
   position: absolute;
   top: 14px;
@@ -604,10 +641,10 @@ onBeforeUnmount(() => {
 .guia-control {
   position: absolute;
   right: 14px;
-  bottom: 14px;
+  bottom: 10px;
   left: 14px;
   z-index: 8;
-  padding: 12px;
+  padding: 10px 12px;
   border-radius: 18px;
   display: grid;
   gap: 10px;
