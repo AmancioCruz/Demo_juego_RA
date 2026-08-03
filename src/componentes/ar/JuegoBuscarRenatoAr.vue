@@ -38,6 +38,8 @@ let fuenteHitTest
 let hitTestSolicitado = false
 let anchorRenato
 let temporizadorAvisoColocado
+let enlaceGlCamara
+let capturaPendiente = false
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -161,7 +163,7 @@ async function iniciarSesionRa() {
   try {
     sesionXr = await navigator.xr.requestSession('immersive-ar', {
       requiredFeatures: ['hit-test', 'local-floor'],
-      optionalFeatures: ['dom-overlay', 'anchors'],
+      optionalFeatures: ['dom-overlay', 'anchors', 'camera-access'],
       domOverlay: { root: contenedorRef.value },
     })
 
@@ -170,6 +172,9 @@ async function iniciarSesionRa() {
     espacioReferencia = await sesionXr.requestReferenceSpace('local-floor')
     espacioVisor = await sesionXr.requestReferenceSpace('viewer')
     fuenteHitTest = await sesionXr.requestHitTestSource({ space: espacioVisor })
+    if ('XRWebGLBinding' in window) {
+      enlaceGlCamara = new XRWebGLBinding(sesionXr, renderizador.getContext())
+    }
     renderizador.xr.setReferenceSpace(espacioReferencia)
     renderizador.setAnimationLoop(renderizarFrameXr)
 
@@ -191,6 +196,8 @@ function finalizarSesionRa() {
   fuenteHitTest = null
   espacioReferencia = null
   espacioVisor = null
+  enlaceGlCamara = null
+  capturaPendiente = false
   anchorRenato?.delete?.()
   anchorRenato = null
   reticulo.visible = false
@@ -260,6 +267,7 @@ function renderizarFrameXr(timestamp, frame) {
   actualizarReticulo(frame)
   actualizarAnchor(frame)
   renderizador.render(escena, camara)
+  if (capturaPendiente) capturarDesdeFrameXr(frame)
 }
 
 function reiniciar() {
@@ -295,46 +303,46 @@ function cerrarAvisoColocado() {
 async function capturarFoto() {
   if (!renderizador || fotoOcupada.value) return
   fotoOcupada.value = true
+  capturaPendiente = true
+  mensaje.value = 'Preparando foto...'
+}
+
+async function capturarDesdeFrameXr(frame) {
+  capturaPendiente = false
 
   try {
-    const blob = await crearBlobFoto()
+    const blob = await crearBlobFoto(frame)
 
     if (!blob) {
-      mensaje.value = 'No se pudo crear la foto en este navegador.'
+      mensaje.value = 'Este navegador no permite capturar la camara de WebXR.'
       return
     }
 
-    const archivo = new File([blob], `renato-ar-${Date.now()}.png`, { type: 'image/png' })
-    if (navigator.canShare?.({ files: [archivo] })) {
-      await navigator.share({
-        files: [archivo],
-        title: 'Renato en AR',
-        text: 'Mi foto con Renato en realidad aumentada.',
-      })
-      mensaje.value = 'Foto lista para guardar o compartir.'
-      return
-    }
-
+    const nombreArchivo = `renato-ar-${Date.now()}.png`
     const enlace = document.createElement('a')
     enlace.href = URL.createObjectURL(blob)
-    enlace.download = archivo.name
+    enlace.download = nombreArchivo
     enlace.click()
     URL.revokeObjectURL(enlace.href)
-    mensaje.value = 'Foto descargada.'
+    mensaje.value = 'Imagen guardada correctamente.'
   } catch {
-    mensaje.value = 'Tu navegador no permitio guardar la foto automaticamente.'
+    mensaje.value = 'Tu navegador no permitio capturar la camara de WebXR.'
   } finally {
     fotoOcupada.value = false
   }
 }
 
-async function crearBlobFoto() {
+async function crearBlobFoto(frame) {
+  const lienzoCamara = obtenerLienzoCamaraXr(frame)
+  if (!lienzoCamara) return null
+
   const origen = renderizador.domElement
   const lienzo = document.createElement('canvas')
-  lienzo.width = origen.width
-  lienzo.height = origen.height
+  lienzo.width = lienzoCamara.width
+  lienzo.height = lienzoCamara.height
   const contexto = lienzo.getContext('2d')
 
+  contexto.drawImage(lienzoCamara, 0, 0, lienzo.width, lienzo.height)
   contexto.drawImage(origen, 0, 0, lienzo.width, lienzo.height)
   const altoBanda = Math.max(88, lienzo.height * 0.12)
   contexto.fillStyle = 'rgba(6, 35, 64, 0.78)'
@@ -347,6 +355,122 @@ async function crearBlobFoto() {
   return await new Promise((resolve) => {
     lienzo.toBlob(resolve, 'image/png', 0.95)
   })
+}
+
+function obtenerLienzoCamaraXr(frame) {
+  if (!enlaceGlCamara || !espacioReferencia) return null
+
+  const pose = frame.getViewerPose(espacioReferencia)
+  const vista = pose?.views?.find((vistaXr) => vistaXr.camera)
+  if (!vista?.camera) return null
+
+  const texturaCamara = enlaceGlCamara.getCameraImage(vista.camera)
+  if (!texturaCamara) return null
+
+  const ancho = vista.camera.width || renderizador.domElement.width
+  const alto = vista.camera.height || renderizador.domElement.height
+  return copiarTexturaCamaraACanvas(texturaCamara, ancho, alto)
+}
+
+function copiarTexturaCamaraACanvas(texturaCamara, ancho, alto) {
+  const gl = renderizador.getContext()
+  const framebuffer = gl.createFramebuffer()
+  const texturaSalida = gl.createTexture()
+  const programa = crearProgramaCopiaTextura(gl)
+  const buffer = gl.createBuffer()
+
+  gl.bindTexture(gl.TEXTURE_2D, texturaSalida)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ancho, alto, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texturaSalida, 0)
+  gl.viewport(0, 0, ancho, alto)
+  gl.useProgram(programa)
+
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+  gl.bufferData(
+    gl.ARRAY_BUFFER,
+    new Float32Array([-1, -1, 0, 0, 1, -1, 1, 0, -1, 1, 0, 1, 1, 1, 1, 1]),
+    gl.STATIC_DRAW,
+  )
+
+  const posicion = gl.getAttribLocation(programa, 'posicion')
+  const uv = gl.getAttribLocation(programa, 'uv')
+  gl.enableVertexAttribArray(posicion)
+  gl.vertexAttribPointer(posicion, 2, gl.FLOAT, false, 16, 0)
+  gl.enableVertexAttribArray(uv)
+  gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 16, 8)
+
+  gl.activeTexture(gl.TEXTURE0)
+  gl.bindTexture(gl.TEXTURE_2D, texturaCamara)
+  gl.uniform1i(gl.getUniformLocation(programa, 'imagen'), 0)
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+
+  const pixeles = new Uint8Array(ancho * alto * 4)
+  gl.readPixels(0, 0, ancho, alto, gl.RGBA, gl.UNSIGNED_BYTE, pixeles)
+
+  const lienzo = document.createElement('canvas')
+  lienzo.width = ancho
+  lienzo.height = alto
+  const contexto = lienzo.getContext('2d')
+  const imagen = contexto.createImageData(ancho, alto)
+  for (let fila = 0; fila < alto; fila += 1) {
+    const origen = fila * ancho * 4
+    const destino = (alto - fila - 1) * ancho * 4
+    imagen.data.set(pixeles.subarray(origen, origen + ancho * 4), destino)
+  }
+  contexto.putImageData(imagen, 0, 0)
+
+  gl.deleteBuffer(buffer)
+  gl.deleteProgram(programa)
+  gl.deleteTexture(texturaSalida)
+  gl.deleteFramebuffer(framebuffer)
+  renderizador.state.reset()
+  return lienzo
+}
+
+function crearProgramaCopiaTextura(gl) {
+  const vertice = compilarShader(
+    gl,
+    gl.VERTEX_SHADER,
+    `
+      attribute vec2 posicion;
+      attribute vec2 uv;
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = vec4(posicion, 0.0, 1.0);
+      }
+    `,
+  )
+  const fragmento = compilarShader(
+    gl,
+    gl.FRAGMENT_SHADER,
+    `
+      precision mediump float;
+      uniform sampler2D imagen;
+      varying vec2 vUv;
+      void main() {
+        gl_FragColor = texture2D(imagen, vUv);
+      }
+    `,
+  )
+  const programa = gl.createProgram()
+  gl.attachShader(programa, vertice)
+  gl.attachShader(programa, fragmento)
+  gl.linkProgram(programa)
+  gl.deleteShader(vertice)
+  gl.deleteShader(fragmento)
+  return programa
+}
+
+function compilarShader(gl, tipo, codigo) {
+  const shader = gl.createShader(tipo)
+  gl.shaderSource(shader, codigo)
+  gl.compileShader(shader)
+  return shader
 }
 
 async function salirExperiencia() {
@@ -366,6 +490,8 @@ function liberarRecursosRa() {
   window.clearTimeout(temporizadorAvisoColocado)
   fuenteHitTest?.cancel?.()
   fuenteHitTest = null
+  enlaceGlCamara = null
+  capturaPendiente = false
   anchorRenato?.delete?.()
   anchorRenato = null
   controlador?.removeEventListener('select', colocarModeloEnReticulo)
