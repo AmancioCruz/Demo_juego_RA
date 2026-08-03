@@ -463,14 +463,73 @@ function obtenerCapturaCamaraXr(frame) {
 }
 
 function crearLienzoModeloXr(vista, ancho, alto) {
-  if (!vista || !modeloRenato?.visible || !renderizador?.domElement) return null
+  if (!vista || !modeloRenato?.visible || !renderizador) return null
 
   const lienzo = document.createElement('canvas')
   lienzo.width = ancho
   lienzo.height = alto
   const contexto = lienzo.getContext('2d')
-  contexto.drawImage(renderizador.domElement, 0, 0, ancho, alto)
-  return lienzo
+  const pixeles = new Uint8Array(ancho * alto * 4)
+  const escenaFoto = new THREE.Scene()
+  const clonRenato = modeloRenato.clone(true)
+  clonRenato.matrix.copy(modeloRenato.matrix)
+  clonRenato.matrixWorld.copy(modeloRenato.matrixWorld)
+  clonRenato.matrixAutoUpdate = modeloRenato.matrixAutoUpdate
+  clonRenato.visible = true
+
+  escena.children.forEach((objeto) => {
+    if (objeto.isLight) escenaFoto.add(objeto.clone())
+  })
+  escenaFoto.add(clonRenato)
+
+  const camaraFoto = new THREE.PerspectiveCamera()
+  camaraFoto.projectionMatrix.fromArray(vista.projectionMatrix)
+  camaraFoto.projectionMatrixInverse.copy(camaraFoto.projectionMatrix).invert()
+  camaraFoto.matrixWorld.fromArray(vista.transform.matrix)
+  camaraFoto.matrixWorldInverse.copy(camaraFoto.matrixWorld).invert()
+  camaraFoto.matrixAutoUpdate = false
+
+  const renderTargetAnterior = renderizador.getRenderTarget()
+  const xrActivoAnterior = renderizador.xr.enabled
+  const autoClearAnterior = renderizador.autoClear
+  const colorAnterior = new THREE.Color()
+  renderizador.getClearColor(colorAnterior)
+  const alphaAnterior = renderizador.getClearAlpha()
+  const objetivoFoto = new THREE.WebGLRenderTarget(ancho, alto, {
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType,
+    depthBuffer: true,
+    stencilBuffer: false,
+  })
+
+  try {
+    renderizador.xr.enabled = false
+    renderizador.autoClear = true
+    renderizador.setRenderTarget(objetivoFoto)
+    renderizador.setClearColor(0x000000, 0)
+    renderizador.clear(true, true, true)
+    escenaFoto.updateMatrixWorld(true)
+    renderizador.render(escenaFoto, camaraFoto)
+    renderizador.readRenderTargetPixels(objetivoFoto, 0, 0, ancho, alto, pixeles)
+
+    const imagen = contexto.createImageData(ancho, alto)
+    for (let fila = 0; fila < alto; fila += 1) {
+      const origen = fila * ancho * 4
+      const destino = (alto - fila - 1) * ancho * 4
+      imagen.data.set(pixeles.subarray(origen, origen + ancho * 4), destino)
+    }
+    contexto.putImageData(imagen, 0, 0)
+    return lienzo
+  } finally {
+    renderizador.setRenderTarget(renderTargetAnterior)
+    renderizador.setClearColor(colorAnterior, alphaAnterior)
+    renderizador.autoClear = autoClearAnterior
+    renderizador.xr.enabled = xrActivoAnterior
+    renderizador.resetState?.()
+    renderizador.state?.reset?.()
+    objetivoFoto.dispose()
+    escenaFoto.remove(clonRenato)
+  }
 }
 
 function copiarTexturaCamaraACanvas(texturaCamara, ancho, alto) {
