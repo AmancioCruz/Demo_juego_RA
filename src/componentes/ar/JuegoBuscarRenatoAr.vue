@@ -30,7 +30,6 @@ let modeloRenato
 let animacionId
 let flujoCamara
 let intervaloMapeo
-let idPuntoMapeo = 0
 let posicionObjetivo = new THREE.Vector3()
 let vistaX = 0
 let vistaY = 0
@@ -40,6 +39,7 @@ let arrastrando = false
 let puntoArrastre = { x: 0, y: 0 }
 const alturaSuperficie = -1.42
 const alturaObjetivoTactil = 0.92
+const ajusteApoyoRenato = -0.18
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -70,7 +70,11 @@ function prepararModelo(modelo) {
   const cajaEscalada = new THREE.Box3().setFromObject(modelo)
   const centroEscalado = new THREE.Vector3()
   cajaEscalada.getCenter(centroEscalado)
-  modelo.position.set(-centroEscalado.x, -cajaEscalada.min.y, -centroEscalado.z)
+  modelo.position.set(
+    -centroEscalado.x,
+    -cajaEscalada.min.y + ajusteApoyoRenato,
+    -centroEscalado.z,
+  )
   modelo.rotation.y = -0.25
   return modelo
 }
@@ -138,15 +142,31 @@ function iniciarDeteccionSuperficie() {
 }
 
 function agregarPuntosMapeo() {
-  const nuevosPuntos = Array.from({ length: 7 }, () => ({
-    id: idPuntoMapeo++,
-    izquierda: `${THREE.MathUtils.randFloat(8, 92)}%`,
-    arriba: `${THREE.MathUtils.randFloat(24, 82)}%`,
-    tamano: `${THREE.MathUtils.randFloat(5, 9)}px`,
-    retraso: `${THREE.MathUtils.randFloat(0, 0.6)}s`,
-  }))
+  const filas = 6
+  const columnas = 8
+  const totalVisible = Math.ceil((progresoMapeo.value / 100) * filas * columnas)
+  const nuevosPuntos = []
 
-  puntosMapeo.value = [...puntosMapeo.value, ...nuevosPuntos].slice(-48)
+  for (let fila = 0; fila < filas; fila += 1) {
+    const progresoFila = fila / (filas - 1)
+    const anchoFila = THREE.MathUtils.lerp(38, 78, progresoFila)
+    const inicioX = 50 - anchoFila / 2
+    const y = THREE.MathUtils.lerp(49, 78, progresoFila)
+
+    for (let columna = 0; columna < columnas; columna += 1) {
+      if (nuevosPuntos.length >= totalVisible) break
+      const progresoColumna = columna / (columnas - 1)
+      nuevosPuntos.push({
+        id: `${fila}-${columna}`,
+        izquierda: `${inicioX + anchoFila * progresoColumna + THREE.MathUtils.randFloat(-1.2, 1.2)}%`,
+        arriba: `${y + THREE.MathUtils.randFloat(-0.8, 0.8)}%`,
+        tamano: `${THREE.MathUtils.lerp(4.5, 8, progresoFila)}px`,
+        retraso: `${(fila + columna) * 0.035}s`,
+      })
+    }
+  }
+
+  puntosMapeo.value = nuevosPuntos
 }
 
 function esconderRenato() {
@@ -155,12 +175,12 @@ function esconderRenato() {
     iniciarDeteccionSuperficie()
     return
   }
-  const lejosDelCentro = THREE.MathUtils.randFloat(0.75, 1.45)
+  const lejosDelCentro = THREE.MathUtils.randFloat(0.35, 0.95)
   const direccionX = Math.random() > 0.5 ? 1 : -1
   posicionObjetivo.set(
     lejosDelCentro * direccionX,
     alturaSuperficie,
-    THREE.MathUtils.randFloat(-0.35, 0.08),
+    THREE.MathUtils.randFloat(-0.08, 0.08),
   )
   modeloRenato.position.set(posicionObjetivo.x, posicionObjetivo.y, posicionObjetivo.z)
   modeloRenato.visible = true
