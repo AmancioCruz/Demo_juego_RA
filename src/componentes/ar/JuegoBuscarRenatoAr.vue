@@ -13,7 +13,7 @@ const videoRef = ref(null)
 const camaraActiva = ref(false)
 const cargandoCamara = ref(false)
 const mensaje = ref('')
-const pista = ref('Mueve la camara para buscar a Renato.')
+const pista = ref('Mueve la camara despacio para detectar un plano.')
 const encontrados = ref(0)
 const meta = 3
 const objetivoRenato = ref(null)
@@ -37,9 +37,9 @@ let baseGamma
 let baseBeta
 let arrastrando = false
 let puntoArrastre = { x: 0, y: 0 }
-const alturaSuperficie = -1.42
-const alturaObjetivoTactil = 0.92
-const ajusteApoyoRenato = -0.18
+const alturaSuperficie = -1.72
+const alturaObjetivoTactil = 0.72
+const ajusteApoyoRenato = -0.1
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -62,7 +62,7 @@ function prepararModelo(modelo) {
   caja.getSize(tamano)
 
   const dimensionMayor = Math.max(tamano.x, tamano.y, tamano.z) || 1
-  const escala = 1.55 / dimensionMayor
+  const escala = 1.12 / dimensionMayor
   modelo.scale.setScalar(escala)
   modelo.position.set(0, 0, 0)
   modelo.updateWorldMatrix(true, true)
@@ -104,7 +104,7 @@ function cargarModeloRenato() {
       modeloRenato = grupo
       modeloRenato.visible = false
       escena.add(modeloRenato)
-      esconderRenato()
+      colocarRenatoEnPlano()
       mensaje.value = ''
     },
     (evento) => {
@@ -136,8 +136,10 @@ function iniciarDeteccionSuperficie() {
     const superficies = ['suelo', 'mesa', 'silla']
     nombreSuperficie.value = superficies[Math.floor(Math.random() * superficies.length)]
     superficieDetectada.value = true
-    pista.value = `Plano firme detectado: ${nombreSuperficie.value}. Renato puede esconderse ahi.`
-    esconderRenato()
+    vistaX = 0
+    vistaY = 0
+    pista.value = `Plano firme detectado: ${nombreSuperficie.value}. Renato se coloco ahi.`
+    colocarRenatoEnPlano()
   }, 220)
 }
 
@@ -169,26 +171,26 @@ function agregarPuntosMapeo() {
   puntosMapeo.value = nuevosPuntos
 }
 
-function esconderRenato() {
+function colocarRenatoEnPlano() {
   if (!modeloRenato || encontrados.value >= meta) return
   if (!superficieDetectada.value) {
     iniciarDeteccionSuperficie()
     return
   }
-  const lejosDelCentro = THREE.MathUtils.randFloat(0.35, 0.95)
-  const direccionX = Math.random() > 0.5 ? 1 : -1
-  posicionObjetivo.set(
-    lejosDelCentro * direccionX,
-    alturaSuperficie,
-    THREE.MathUtils.randFloat(-0.08, 0.08),
-  )
+  posicionObjetivo.set(0, alturaSuperficie, 0)
   modeloRenato.position.set(posicionObjetivo.x, posicionObjetivo.y, posicionObjetivo.z)
+  modeloRenato.rotation.y = -0.25
   modeloRenato.visible = true
   actualizarObjetivoTactil()
 }
 
 function actualizarCamaraVirtual() {
   if (!camara) return
+  if (superficieDetectada.value) {
+    camara.position.set(0, 0, 5)
+    camara.lookAt(0, 0, 0)
+    return
+  }
   camara.position.x = vistaX
   camara.position.y = vistaY
   camara.lookAt(vistaX, vistaY, 0)
@@ -238,7 +240,7 @@ function encontrarRenato() {
   pista.value = 'Bien. Renato se escondio otra vez.'
   modeloRenato.visible = false
   objetivoRenato.value = null
-  setTimeout(() => esconderRenato(), 420)
+  setTimeout(() => colocarRenatoEnPlano(), 420)
 }
 
 function iniciarEscena() {
@@ -273,7 +275,6 @@ function animar() {
   animacionId = requestAnimationFrame(animar)
   actualizarCamaraVirtual()
   actualizarObjetivoTactil()
-  if (modeloRenato?.visible) modeloRenato.rotation.y += 0.008
   renderizador.render(escena, camara)
 }
 
@@ -366,9 +367,9 @@ function reiniciar() {
   baseGamma = undefined
   baseBeta = undefined
   pista.value = superficieDetectada.value
-    ? `Superficie detectada: ${nombreSuperficie.value}. Busca a Renato cerca de ahi.`
-    : 'Mueve la camara para buscar a Renato.'
-  esconderRenato()
+    ? `Plano firme detectado: ${nombreSuperficie.value}. Renato se coloco ahi.`
+    : 'Mueve la camara despacio para detectar un plano.'
+  colocarRenatoEnPlano()
 }
 
 onMounted(() => {
