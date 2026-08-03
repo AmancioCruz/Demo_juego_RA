@@ -333,6 +333,7 @@ async function capturarDesdeFrameXr(frame) {
     mensaje.value = 'Tu navegador no permitio capturar la camara de WebXR.'
   } finally {
     restaurarEstadoCaptura(estadoCaptura)
+    restaurarRenderizadoXr()
     fotoOcupada.value = false
   }
 }
@@ -407,6 +408,16 @@ function restaurarEstadoCaptura(estado) {
 
   if (estado?.modeloColocado && modeloRenato) modeloRenato.visible = true
   if (estado?.sesionActiva && !saliendoExperiencia) renderizador?.setAnimationLoop(renderizarFrameXr)
+}
+
+function restaurarRenderizadoXr() {
+  if (!renderizador || !sesionActiva.value || saliendoExperiencia) return
+  renderizador.xr.enabled = true
+  if (espacioReferencia) renderizador.xr.setReferenceSpace(espacioReferencia)
+  renderizador.setRenderTarget(null)
+  renderizador.resetState?.()
+  renderizador.state?.reset?.()
+  renderizador.setAnimationLoop(renderizarFrameXr)
 }
 
 async function crearBlobFoto(frame) {
@@ -515,12 +526,13 @@ function copiarTexturaCamaraACanvas(texturaCamara, ancho, alto) {
     contexto.putImageData(imagen, 0, 0)
     return lienzo
   } finally {
+    restaurarEstadoGl(gl, estadoGl)
     gl.deleteBuffer(buffer)
     gl.deleteProgram(programa)
     gl.deleteTexture(texturaSalida)
     gl.deleteFramebuffer(framebuffer)
-    restaurarEstadoGl(gl, estadoGl)
-    renderizador.state.reset()
+    renderizador.resetState?.()
+    renderizador.state?.reset?.()
   }
 }
 
@@ -528,20 +540,38 @@ function guardarEstadoGl(gl) {
   return {
     framebuffer: gl.getParameter(gl.FRAMEBUFFER_BINDING),
     arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING),
+    elementArrayBuffer: gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING),
     currentProgram: gl.getParameter(gl.CURRENT_PROGRAM),
     activeTexture: gl.getParameter(gl.ACTIVE_TEXTURE),
     texture2D: gl.getParameter(gl.TEXTURE_BINDING_2D),
     viewport: gl.getParameter(gl.VIEWPORT),
+    scissor: gl.getParameter(gl.SCISSOR_BOX),
+    scissorTest: gl.isEnabled(gl.SCISSOR_TEST),
+    blend: gl.isEnabled(gl.BLEND),
+    cullFace: gl.isEnabled(gl.CULL_FACE),
+    depthTest: gl.isEnabled(gl.DEPTH_TEST),
+    colorClear: gl.getParameter(gl.COLOR_CLEAR_VALUE),
   }
 }
 
 function restaurarEstadoGl(gl, estado) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, estado.framebuffer)
   gl.bindBuffer(gl.ARRAY_BUFFER, estado.arrayBuffer)
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, estado.elementArrayBuffer)
   gl.useProgram(estado.currentProgram)
   gl.activeTexture(estado.activeTexture)
   gl.bindTexture(gl.TEXTURE_2D, estado.texture2D)
   gl.viewport(estado.viewport[0], estado.viewport[1], estado.viewport[2], estado.viewport[3])
+  gl.scissor(estado.scissor[0], estado.scissor[1], estado.scissor[2], estado.scissor[3])
+  if (estado.scissorTest) gl.enable(gl.SCISSOR_TEST)
+  else gl.disable(gl.SCISSOR_TEST)
+  if (estado.blend) gl.enable(gl.BLEND)
+  else gl.disable(gl.BLEND)
+  if (estado.cullFace) gl.enable(gl.CULL_FACE)
+  else gl.disable(gl.CULL_FACE)
+  if (estado.depthTest) gl.enable(gl.DEPTH_TEST)
+  else gl.disable(gl.DEPTH_TEST)
+  gl.clearColor(estado.colorClear[0], estado.colorClear[1], estado.colorClear[2], estado.colorClear[3])
 }
 
 function crearProgramaCopiaTextura(gl) {
@@ -586,23 +616,26 @@ function compilarShader(gl, tipo, codigo) {
   return shader
 }
 
-async function salirExperiencia() {
+function salirExperiencia() {
   saliendoExperiencia = true
   const sesionActual = sesionXr
+  const rutaInicio = obtenerRutaInicio()
   sesionXr = null
 
   try {
     if (sesionActual) {
       sesionActual.removeEventListener?.('end', finalizarSesionRa)
-      try {
-        await sesionActual.end()
-      } catch {
-        // La sesion puede haberse cerrado desde el navegador mientras se toca Salir.
-      }
+      sesionActual.end?.().catch?.(() => {})
     }
     liberarRecursosRa()
   } finally {
-    window.location.replace(obtenerRutaInicio())
+    window.setTimeout(() => {
+      window.location.replace(rutaInicio)
+      window.setTimeout(() => {
+        window.location.href = rutaInicio
+        window.location.reload()
+      }, 120)
+    }, 0)
   }
 }
 
