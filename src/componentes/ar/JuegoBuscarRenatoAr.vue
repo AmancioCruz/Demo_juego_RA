@@ -452,49 +452,14 @@ function obtenerCapturaCamaraXr(frame) {
 }
 
 function crearLienzoModeloXr(vista, ancho, alto) {
-  if (!vista || !modeloRenato?.visible) return null
+  if (!vista || !modeloRenato?.visible || !renderizador?.domElement) return null
 
   const lienzo = document.createElement('canvas')
-  const escenaFoto = new THREE.Scene()
-  const clonRenato = modeloRenato.clone(true)
-  clonRenato.matrix.copy(modeloRenato.matrix)
-  clonRenato.matrixWorld.copy(modeloRenato.matrixWorld)
-  clonRenato.matrixAutoUpdate = modeloRenato.matrixAutoUpdate
-  clonRenato.visible = true
-  escena.children.forEach((objeto) => {
-    if (objeto.isLight) escenaFoto.add(objeto.clone())
-  })
-  escenaFoto.add(clonRenato)
-
-  const renderizadorFoto = new THREE.WebGLRenderer({
-    canvas: lienzo,
-    alpha: true,
-    antialias: true,
-    preserveDrawingBuffer: true,
-  })
-  renderizadorFoto.outputColorSpace = THREE.SRGBColorSpace
-  renderizadorFoto.toneMapping = THREE.ACESFilmicToneMapping
-  renderizadorFoto.toneMappingExposure = renderizador.toneMappingExposure
-  renderizadorFoto.setPixelRatio(1)
-  renderizadorFoto.setSize(ancho, alto, false)
-  renderizadorFoto.setClearColor(0x000000, 0)
-  renderizadorFoto.autoClear = true
-
-  const camaraFoto = new THREE.PerspectiveCamera()
-  camaraFoto.projectionMatrix.fromArray(vista.projectionMatrix)
-  camaraFoto.projectionMatrixInverse.copy(camaraFoto.projectionMatrix).invert()
-  camaraFoto.matrixWorld.fromArray(vista.transform.matrix)
-  camaraFoto.matrixWorldInverse.copy(camaraFoto.matrixWorld).invert()
-  camaraFoto.matrixAutoUpdate = false
-
-  try {
-    escenaFoto.updateMatrixWorld(true)
-    renderizadorFoto.render(escenaFoto, camaraFoto)
-    return lienzo
-  } finally {
-    escenaFoto.remove(clonRenato)
-    renderizadorFoto.dispose()
-  }
+  lienzo.width = ancho
+  lienzo.height = alto
+  const contexto = lienzo.getContext('2d')
+  contexto.drawImage(renderizador.domElement, 0, 0, ancho, alto)
+  return lienzo
 }
 
 function copiarTexturaCamaraACanvas(texturaCamara, ancho, alto) {
@@ -642,7 +607,10 @@ async function salirExperiencia() {
 }
 
 function obtenerRutaInicio() {
-  return `${window.location.origin}${window.location.pathname}#/`
+  const inicio = new URL(import.meta.env.BASE_URL || './', window.location.href)
+  inicio.hash = '/'
+  inicio.search = ''
+  return inicio.href
 }
 
 function liberarRecursosRa() {
