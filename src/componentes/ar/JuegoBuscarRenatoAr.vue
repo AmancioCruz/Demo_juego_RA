@@ -309,6 +309,7 @@ async function capturarFoto() {
 
 async function capturarDesdeFrameXr(frame) {
   capturaPendiente = false
+  const estadoCaptura = guardarEstadoCaptura()
 
   try {
     const blob = await crearBlobFoto(frame)
@@ -328,8 +329,73 @@ async function capturarDesdeFrameXr(frame) {
   } catch {
     mensaje.value = 'Tu navegador no permitio capturar la camara de WebXR.'
   } finally {
+    restaurarEstadoCaptura(estadoCaptura)
     fotoOcupada.value = false
   }
+}
+
+function guardarEstadoCaptura() {
+  return {
+    modelo: modeloRenato
+      ? {
+          visible: modeloRenato.visible,
+          parent: modeloRenato.parent,
+          matrix: modeloRenato.matrix.clone(),
+          matrixWorld: modeloRenato.matrixWorld.clone(),
+          matrixAutoUpdate: modeloRenato.matrixAutoUpdate,
+          position: modeloRenato.position.clone(),
+          quaternion: modeloRenato.quaternion.clone(),
+          scale: modeloRenato.scale.clone(),
+        }
+      : null,
+    reticulo: reticulo
+      ? {
+          visible: reticulo.visible,
+          matrix: reticulo.matrix.clone(),
+          matrixAutoUpdate: reticulo.matrixAutoUpdate,
+        }
+      : null,
+    camara: camara
+      ? {
+          matrix: camara.matrix.clone(),
+          matrixWorld: camara.matrixWorld.clone(),
+          projectionMatrix: camara.projectionMatrix.clone(),
+          matrixAutoUpdate: camara.matrixAutoUpdate,
+        }
+      : null,
+  }
+}
+
+function restaurarEstadoCaptura(estado) {
+  if (estado?.modelo && modeloRenato) {
+    if (estado.modelo.parent && modeloRenato.parent !== estado.modelo.parent) {
+      estado.modelo.parent.add(modeloRenato)
+    }
+    modeloRenato.visible = estado.modelo.visible
+    modeloRenato.matrix.copy(estado.modelo.matrix)
+    modeloRenato.matrixWorld.copy(estado.modelo.matrixWorld)
+    modeloRenato.matrixAutoUpdate = estado.modelo.matrixAutoUpdate
+    modeloRenato.position.copy(estado.modelo.position)
+    modeloRenato.quaternion.copy(estado.modelo.quaternion)
+    modeloRenato.scale.copy(estado.modelo.scale)
+    modeloRenato.matrixWorldNeedsUpdate = true
+  }
+
+  if (estado?.reticulo && reticulo) {
+    reticulo.visible = estado.reticulo.visible
+    reticulo.matrix.copy(estado.reticulo.matrix)
+    reticulo.matrixAutoUpdate = estado.reticulo.matrixAutoUpdate
+  }
+
+  if (estado?.camara && camara) {
+    camara.matrix.copy(estado.camara.matrix)
+    camara.matrixWorld.copy(estado.camara.matrixWorld)
+    camara.projectionMatrix.copy(estado.camara.projectionMatrix)
+    camara.projectionMatrixInverse.copy(camara.projectionMatrix).invert()
+    camara.matrixAutoUpdate = estado.camara.matrixAutoUpdate
+  }
+
+  if (sesionActiva.value) renderizador?.setAnimationLoop(renderizarFrameXr)
 }
 
 async function crearBlobFoto(frame) {
@@ -400,72 +466,97 @@ function crearLienzoModeloXr(vista, ancho, alto) {
   camaraFoto.matrixAutoUpdate = false
 
   const reticuloVisible = reticulo?.visible
-  if (reticulo) reticulo.visible = false
-  escena.updateMatrixWorld(true)
-  renderizadorFoto.render(escena, camaraFoto)
-  if (reticulo) reticulo.visible = reticuloVisible
-
-  renderizadorFoto.dispose()
-  return lienzo
+  try {
+    if (reticulo) reticulo.visible = false
+    escena.updateMatrixWorld(true)
+    renderizadorFoto.render(escena, camaraFoto)
+    return lienzo
+  } finally {
+    if (reticulo) reticulo.visible = reticuloVisible
+    renderizadorFoto.dispose()
+  }
 }
 
 function copiarTexturaCamaraACanvas(texturaCamara, ancho, alto) {
   const gl = renderizador.getContext()
+  const estadoGl = guardarEstadoGl(gl)
   const framebuffer = gl.createFramebuffer()
   const texturaSalida = gl.createTexture()
   const programa = crearProgramaCopiaTextura(gl)
   const buffer = gl.createBuffer()
+  try {
+    gl.bindTexture(gl.TEXTURE_2D, texturaSalida)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ancho, alto, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 
-  gl.bindTexture(gl.TEXTURE_2D, texturaSalida)
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, ancho, alto, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texturaSalida, 0)
+    gl.viewport(0, 0, ancho, alto)
+    gl.useProgram(programa)
 
-  gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texturaSalida, 0)
-  gl.viewport(0, 0, ancho, alto)
-  gl.useProgram(programa)
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
+    gl.bufferData(
+      gl.ARRAY_BUFFER,
+      new Float32Array([-1, -1, 0, 0, 1, -1, 1, 0, -1, 1, 0, 1, 1, 1, 1, 1]),
+      gl.STATIC_DRAW,
+    )
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
-  gl.bufferData(
-    gl.ARRAY_BUFFER,
-    new Float32Array([-1, -1, 0, 0, 1, -1, 1, 0, -1, 1, 0, 1, 1, 1, 1, 1]),
-    gl.STATIC_DRAW,
-  )
+    const posicion = gl.getAttribLocation(programa, 'posicion')
+    const uv = gl.getAttribLocation(programa, 'uv')
+    gl.enableVertexAttribArray(posicion)
+    gl.vertexAttribPointer(posicion, 2, gl.FLOAT, false, 16, 0)
+    gl.enableVertexAttribArray(uv)
+    gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 16, 8)
 
-  const posicion = gl.getAttribLocation(programa, 'posicion')
-  const uv = gl.getAttribLocation(programa, 'uv')
-  gl.enableVertexAttribArray(posicion)
-  gl.vertexAttribPointer(posicion, 2, gl.FLOAT, false, 16, 0)
-  gl.enableVertexAttribArray(uv)
-  gl.vertexAttribPointer(uv, 2, gl.FLOAT, false, 16, 8)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, texturaCamara)
+    gl.uniform1i(gl.getUniformLocation(programa, 'imagen'), 0)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
-  gl.activeTexture(gl.TEXTURE0)
-  gl.bindTexture(gl.TEXTURE_2D, texturaCamara)
-  gl.uniform1i(gl.getUniformLocation(programa, 'imagen'), 0)
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    const pixeles = new Uint8Array(ancho * alto * 4)
+    gl.readPixels(0, 0, ancho, alto, gl.RGBA, gl.UNSIGNED_BYTE, pixeles)
 
-  const pixeles = new Uint8Array(ancho * alto * 4)
-  gl.readPixels(0, 0, ancho, alto, gl.RGBA, gl.UNSIGNED_BYTE, pixeles)
-
-  const lienzo = document.createElement('canvas')
-  lienzo.width = ancho
-  lienzo.height = alto
-  const contexto = lienzo.getContext('2d')
-  const imagen = contexto.createImageData(ancho, alto)
-  for (let fila = 0; fila < alto; fila += 1) {
-    const origen = fila * ancho * 4
-    const destino = (alto - fila - 1) * ancho * 4
-    imagen.data.set(pixeles.subarray(origen, origen + ancho * 4), destino)
+    const lienzo = document.createElement('canvas')
+    lienzo.width = ancho
+    lienzo.height = alto
+    const contexto = lienzo.getContext('2d')
+    const imagen = contexto.createImageData(ancho, alto)
+    for (let fila = 0; fila < alto; fila += 1) {
+      const origen = fila * ancho * 4
+      const destino = (alto - fila - 1) * ancho * 4
+      imagen.data.set(pixeles.subarray(origen, origen + ancho * 4), destino)
+    }
+    contexto.putImageData(imagen, 0, 0)
+    return lienzo
+  } finally {
+    gl.deleteBuffer(buffer)
+    gl.deleteProgram(programa)
+    gl.deleteTexture(texturaSalida)
+    gl.deleteFramebuffer(framebuffer)
+    restaurarEstadoGl(gl, estadoGl)
+    renderizador.state.reset()
   }
-  contexto.putImageData(imagen, 0, 0)
+}
 
-  gl.deleteBuffer(buffer)
-  gl.deleteProgram(programa)
-  gl.deleteTexture(texturaSalida)
-  gl.deleteFramebuffer(framebuffer)
-  renderizador.state.reset()
-  return lienzo
+function guardarEstadoGl(gl) {
+  return {
+    framebuffer: gl.getParameter(gl.FRAMEBUFFER_BINDING),
+    arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING),
+    currentProgram: gl.getParameter(gl.CURRENT_PROGRAM),
+    activeTexture: gl.getParameter(gl.ACTIVE_TEXTURE),
+    texture2D: gl.getParameter(gl.TEXTURE_BINDING_2D),
+    viewport: gl.getParameter(gl.VIEWPORT),
+  }
+}
+
+function restaurarEstadoGl(gl, estado) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, estado.framebuffer)
+  gl.bindBuffer(gl.ARRAY_BUFFER, estado.arrayBuffer)
+  gl.useProgram(estado.currentProgram)
+  gl.activeTexture(estado.activeTexture)
+  gl.bindTexture(gl.TEXTURE_2D, estado.texture2D)
+  gl.viewport(estado.viewport[0], estado.viewport[1], estado.viewport[2], estado.viewport[3])
 }
 
 function crearProgramaCopiaTextura(gl) {
