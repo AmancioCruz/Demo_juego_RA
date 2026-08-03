@@ -10,7 +10,7 @@ const album = useAlbumStore()
     <header class="encabezado-vista">
       <p class="etiqueta">Album demo</p>
       <h1>Sticker disponible</h1>
-      <p>Por ahora la experiencia se centra en el sticker del lapiz y su minijuego AR.</p>
+      <p>Esta demo usa el sticker del lapiz para abrir la experiencia AR de Renato.</p>
     </header>
 
     <section class="resumen-album">

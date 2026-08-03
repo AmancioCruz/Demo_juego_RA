@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
         <div v-if="stickerDesbloqueado" class="acciones-escaner">
           <RouterLink class="boton-album" to="/album">Ver en album</RouterLink>
           <RouterLink class="boton-jugar" :to="{ name: 'juego', params: { id: stickerDesbloqueado.id } }">
-            Jugar
+            Abrir AR
           </RouterLink>
         </div>
       </div>

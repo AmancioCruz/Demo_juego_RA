@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
       <header class="encabezado-vista">
         <p class="etiqueta">Modelo 3D</p>
         <h1>Renato</h1>
-        <p>Gira el modelo con el dedo para verlo mejor.</p>
+        <p>Revisa a Renato antes de colocarlo en realidad aumentada.</p>
       </header>
 
       <TarjetaApp v-if="!sticker.desbloqueado" class="vista-bloqueada">
@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
         <div class="acciones-modelo">
           <RouterLink class="boton-secundario" to="/album">Album</RouterLink>
           <RouterLink class="boton-jugar" :to="{ name: 'juego', params: { id: sticker.id } }">
-            Jugar
+            Colocar AR
           </RouterLink>
         </div>
       </section>

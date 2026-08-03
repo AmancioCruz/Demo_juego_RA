@@ -14,9 +14,9 @@ export const stickersIniciales = [
     modelo3d: `${rutaBase}modelos/lapiz.glb`,
     desbloqueado: true,
     juego: {
-      titulo: 'Encuentra a Renato',
-      descripcion: 'Mueve la camara para buscar a Renato escondido en realidad aumentada.',
-      objetivo: 'Encuentra a Renato 3 veces',
+      titulo: 'Coloca a Renato',
+      descripcion: 'Pon a Renato sobre una superficie real y rodealo con tu celular.',
+      objetivo: 'Coloca a Renato en realidad aumentada',
       elementos: ['Renato'],
     },
   },

@@ -20,7 +20,7 @@ function iniciarJuego() {
   <div class="contenedor-vista vista-juego">
     <template v-if="sticker">
       <header class="encabezado-vista">
-        <p class="etiqueta">Minijuego AR</p>
+        <p class="etiqueta">Experiencia AR</p>
         <h1>{{ sticker.juego.titulo }}</h1>
         <p>{{ sticker.juego.descripcion }}</p>
       </header>
@@ -42,9 +42,9 @@ function iniciarJuego() {
               <path d="M8 5v14l11-7z" />
             </svg>
           </div>
-          <h2>Listo para jugar</h2>
-          <p>Mueve la camara para buscar a Renato y tocalo cuando aparezca.</p>
-          <BotonApp bloque @click="iniciarJuego">Jugar</BotonApp>
+          <h2>Prepara tu espacio</h2>
+          <p>Busca una superficie plana, inicia RA y toca la pantalla para colocar a Renato.</p>
+          <BotonApp bloque @click="iniciarJuego">Iniciar experiencia</BotonApp>
         </TarjetaApp>
       </section>
 

@@ -1,5 +1,6 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import BotonApp from '@/componentes/interfaz/BotonApp.vue'
@@ -8,15 +9,22 @@ const props = defineProps({
   sticker: { type: Object, required: true },
 })
 
+const router = useRouter()
 const contenedorRef = ref(null)
 const mensaje = ref('')
-const estadoRa = ref('Preparando experiencia AR...')
+const estadoRa = ref('Preparando a Renato...')
 const xrSoportado = ref(false)
 const sesionActiva = ref(false)
 const planoEncontrado = ref(false)
 const modeloColocado = ref(false)
-const encontrados = ref(0)
-const meta = 3
+const fotoOcupada = ref(false)
+
+const instruccionPrincipal = computed(() => {
+  if (!sesionActiva.value) return 'Inicia la experiencia para colocar a Renato en tu espacio.'
+  if (modeloColocado.value) return 'Renato ya esta colocado. Rodealo con tu celular para verlo completo.'
+  if (planoEncontrado.value) return 'Superficie lista. Toca la pantalla para colocar a Renato.'
+  return 'Busca una superficie plana y toca la pantalla para colocar a Renato.'
+})
 
 let escena
 let camara
@@ -105,18 +113,29 @@ function iniciarEscena() {
   escena = new THREE.Scene()
   camara = new THREE.PerspectiveCamera(70, ancho / alto, 0.01, 30)
 
-  renderizador = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+  renderizador = new THREE.WebGLRenderer({
+    alpha: true,
+    antialias: true,
+    preserveDrawingBuffer: true,
+  })
   renderizador.xr.enabled = true
   renderizador.xr.setReferenceSpaceType('local-floor')
+  renderizador.outputColorSpace = THREE.SRGBColorSpace
+  renderizador.toneMapping = THREE.ACESFilmicToneMapping
+  renderizador.toneMappingExposure = 0.82
   renderizador.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderizador.setSize(ancho, alto)
   renderizador.domElement.className = 'canvas-xr'
   contenedorRef.value.appendChild(renderizador.domElement)
 
-  escena.add(new THREE.HemisphereLight('#ffffff', '#abc7df', 2.2))
-  const luz = new THREE.DirectionalLight('#ffffff', 2.6)
-  luz.position.set(2, 4, 3)
-  escena.add(luz)
+  escena.add(new THREE.AmbientLight('#ffffff', 0.45))
+  escena.add(new THREE.HemisphereLight('#ffffff', '#d6e0ea', 1.1))
+  const luzPrincipal = new THREE.DirectionalLight('#fff7ec', 1.25)
+  luzPrincipal.position.set(-2, 4, 3)
+  escena.add(luzPrincipal)
+  const luzRelleno = new THREE.DirectionalLight('#e7f2ff', 0.45)
+  luzRelleno.position.set(3, 2, -2)
+  escena.add(luzRelleno)
 
   reticulo = crearReticulo()
   cargarModeloRenato()
@@ -132,7 +151,7 @@ async function revisarSoporteWebXr() {
   )
   mensaje.value = xrSoportado.value ? mensaje.value : 'Este navegador o dispositivo no soporta WebXR AR.'
   estadoRa.value = xrSoportado.value
-    ? 'Inicia RA y apunta al suelo o una mesa.'
+    ? 'Listo para iniciar la colocacion de Renato.'
     : 'Este navegador o dispositivo no soporta WebXR AR.'
 }
 
@@ -157,7 +176,7 @@ async function iniciarSesionRa() {
     sesionActiva.value = true
     planoEncontrado.value = false
     modeloColocado.value = false
-    estadoRa.value = 'Busca una superficie plana.'
+    estadoRa.value = 'Escaneando superficies planas.'
   } catch {
     estadoRa.value = 'No se pudo iniciar WebXR AR. Usa Chrome Android con HTTPS.'
   }
@@ -177,7 +196,9 @@ function finalizarSesionRa() {
   reticulo.visible = false
   if (modeloRenato) modeloRenato.visible = false
   renderizador.setAnimationLoop(null)
-  estadoRa.value = 'Inicia RA y apunta al suelo o una mesa.'
+  sesionXr?.removeEventListener?.('end', finalizarSesionRa)
+  sesionXr = null
+  estadoRa.value = 'Listo para iniciar la colocacion de Renato.'
 }
 
 async function colocarModeloEnReticulo() {
@@ -189,7 +210,7 @@ async function colocarModeloEnReticulo() {
   modeloRenato.visible = true
   modeloColocado.value = true
   reticulo.visible = false
-  estadoRa.value = 'Renato quedo colocado. Rodealo con el celular.'
+  estadoRa.value = 'Renato quedo fijo en tu espacio.'
 
   const resultado = reticulo.userData.hitTestResult
   if (resultado && typeof resultado.createAnchor === 'function') {
@@ -208,7 +229,7 @@ function actualizarReticulo(frame) {
   if (!resultados.length) {
     reticulo.visible = false
     planoEncontrado.value = false
-    estadoRa.value = 'Busca una superficie plana.'
+    estadoRa.value = 'Escaneando superficies planas.'
     return
   }
 
@@ -220,7 +241,7 @@ function actualizarReticulo(frame) {
   planoEncontrado.value = true
   reticulo.matrix.fromArray(pose.transform.matrix)
   reticulo.userData.hitTestResult = resultado
-  estadoRa.value = 'Superficie detectada. Toca para colocar a Renato.'
+  estadoRa.value = 'Superficie detectada.'
 }
 
 function actualizarAnchor(frame) {
@@ -228,6 +249,7 @@ function actualizarAnchor(frame) {
   const pose = frame.getPose(anchorRenato.anchorSpace, espacioReferencia)
   if (!pose) return
   modeloRenato.matrix.fromArray(pose.transform.matrix)
+  modeloRenato.matrixWorldNeedsUpdate = true
 }
 
 function renderizarFrameXr(timestamp, frame) {
@@ -240,7 +262,6 @@ function renderizarFrameXr(timestamp, frame) {
 }
 
 function reiniciar() {
-  encontrados.value = 0
   modeloColocado.value = false
   planoEncontrado.value = false
   anchorRenato?.delete?.()
@@ -248,8 +269,73 @@ function reiniciar() {
   if (modeloRenato) modeloRenato.visible = false
   if (reticulo) reticulo.visible = false
   estadoRa.value = sesionActiva.value
-    ? 'Busca una superficie plana.'
-    : 'Inicia RA y apunta al suelo o una mesa.'
+    ? 'Escaneando superficies planas.'
+    : 'Listo para iniciar la colocacion de Renato.'
+}
+
+async function capturarFoto() {
+  if (!renderizador || fotoOcupada.value) return
+  fotoOcupada.value = true
+
+  try {
+    const blob = await crearBlobFoto()
+
+    if (!blob) {
+      mensaje.value = 'No se pudo crear la foto en este navegador.'
+      return
+    }
+
+    const archivo = new File([blob], `renato-ar-${Date.now()}.png`, { type: 'image/png' })
+    if (navigator.canShare?.({ files: [archivo] })) {
+      await navigator.share({
+        files: [archivo],
+        title: 'Renato en AR',
+        text: 'Mi foto con Renato en realidad aumentada.',
+      })
+      mensaje.value = 'Foto lista para guardar o compartir.'
+      return
+    }
+
+    const enlace = document.createElement('a')
+    enlace.href = URL.createObjectURL(blob)
+    enlace.download = archivo.name
+    enlace.click()
+    URL.revokeObjectURL(enlace.href)
+    mensaje.value = 'Foto descargada.'
+  } catch {
+    mensaje.value = 'Tu navegador no permitio guardar la foto automaticamente.'
+  } finally {
+    fotoOcupada.value = false
+  }
+}
+
+async function crearBlobFoto() {
+  const origen = renderizador.domElement
+  const lienzo = document.createElement('canvas')
+  lienzo.width = origen.width
+  lienzo.height = origen.height
+  const contexto = lienzo.getContext('2d')
+
+  contexto.drawImage(origen, 0, 0, lienzo.width, lienzo.height)
+  const altoBanda = Math.max(88, lienzo.height * 0.12)
+  contexto.fillStyle = 'rgba(6, 35, 64, 0.78)'
+  contexto.fillRect(0, lienzo.height - altoBanda, lienzo.width, altoBanda)
+  contexto.fillStyle = '#ffffff'
+  contexto.font = `700 ${Math.max(24, lienzo.width * 0.036)}px Arial`
+  contexto.textAlign = 'center'
+  contexto.fillText('Renato en realidad aumentada', lienzo.width / 2, lienzo.height - altoBanda / 2 + 10)
+
+  return await new Promise((resolve) => {
+    lienzo.toBlob(resolve, 'image/png', 0.95)
+  })
+}
+
+async function salirExperiencia() {
+  try {
+    if (sesionXr) await sesionXr.end()
+  } finally {
+    router.back()
+  }
 }
 
 function ajustarTamano() {
@@ -280,8 +366,8 @@ onBeforeUnmount(() => {
 <template>
   <section class="juego-renato">
     <div class="panel-puntaje">
-      <strong>{{ encontrados }}/{{ meta }}</strong>
-      <span>Renatos encontrados</span>
+      <strong>{{ modeloColocado ? 'Listo' : 'AR' }}</strong>
+      <span>{{ modeloColocado ? 'Renato colocado' : 'Coloca a Renato' }}</span>
       <BotonApp variante="secundario" @click="reiniciar">Reiniciar</BotonApp>
     </div>
 
@@ -292,10 +378,28 @@ onBeforeUnmount(() => {
           <p>{{ estadoRa }}</p>
         </div>
 
+        <div v-if="sesionActiva" class="instruccion-principal">
+          <div class="icono-instruccion">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 3a7 7 0 0 1 7 7c0 4.2-5.4 10-6.26 10.9a1 1 0 0 1-1.48 0C10.4 20 5 14.2 5 10a7 7 0 0 1 7-7Zm0 4a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
+              />
+            </svg>
+          </div>
+          <p>{{ instruccionPrincipal }}</p>
+        </div>
+
+        <div v-if="sesionActiva" class="acciones-xr">
+          <BotonApp variante="secundario" :disabled="fotoOcupada" @click="capturarFoto">
+            {{ fotoOcupada ? 'Guardando...' : 'Foto' }}
+          </BotonApp>
+          <BotonApp variante="azul" @click="salirExperiencia">Salir</BotonApp>
+        </div>
+
         <div v-if="!sesionActiva" class="inicio-xr">
           <div class="icono-xr">AR</div>
           <h2>Coloca a Renato</h2>
-          <p>Inicia RA, apunta a una superficie plana y toca para poner el modelo ahi.</p>
+          <p>Busca una superficie plana y toca la pantalla para colocar a Renato.</p>
           <BotonApp bloque :disabled="!xrSoportado || !modeloRenato" @click="iniciarSesionRa">
             Iniciar RA
           </BotonApp>
@@ -326,7 +430,7 @@ onBeforeUnmount(() => {
 
 .panel-puntaje strong {
   color: var(--rojo);
-  font-size: 1.25rem;
+  font-size: 1.05rem;
 }
 
 .panel-puntaje span {
@@ -397,6 +501,61 @@ onBeforeUnmount(() => {
   margin: 0;
 }
 
+.instruccion-principal {
+  align-self: start;
+  justify-self: center;
+  width: min(92%, 390px);
+  margin-top: 76px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 22px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+  color: #fff;
+  background: rgba(6, 35, 64, 0.86);
+  box-shadow:
+    0 18px 40px rgba(6, 35, 64, 0.26),
+    0 0 0 6px rgba(255, 213, 79, 0.1);
+  backdrop-filter: blur(16px);
+  animation: llamada-suave 2.4s ease-in-out infinite;
+}
+
+.icono-instruccion {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--azul);
+  background: var(--amarillo);
+}
+
+.icono-instruccion svg {
+  width: 24px;
+  height: 24px;
+  fill: currentColor;
+}
+
+.instruccion-principal p {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 950;
+  line-height: 1.25;
+}
+
+.acciones-xr {
+  align-self: end;
+  justify-self: center;
+  width: min(92%, 390px);
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  pointer-events: auto;
+}
+
 .inicio-xr {
   align-self: center;
   justify-self: center;
@@ -439,5 +598,16 @@ onBeforeUnmount(() => {
 
 .mensaje-juego {
   color: var(--rojo);
+}
+
+@keyframes llamada-suave {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
 }
 </style>
