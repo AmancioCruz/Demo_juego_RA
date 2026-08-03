@@ -40,6 +40,8 @@ let anchorRenato
 let temporizadorAvisoColocado
 let enlaceGlCamara
 let capturaPendiente = false
+let saliendoExperiencia = false
+let recursosLiberados = false
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -188,6 +190,7 @@ async function iniciarSesionRa() {
 }
 
 function finalizarSesionRa() {
+  if (recursosLiberados) return
   sesionActiva.value = false
   planoEncontrado.value = false
   modeloColocado.value = false
@@ -200,9 +203,9 @@ function finalizarSesionRa() {
   capturaPendiente = false
   anchorRenato?.delete?.()
   anchorRenato = null
-  reticulo.visible = false
+  if (reticulo) reticulo.visible = false
   if (modeloRenato) modeloRenato.visible = false
-  renderizador.setAnimationLoop(null)
+  renderizador?.setAnimationLoop(null)
   sesionXr?.removeEventListener?.('end', finalizarSesionRa)
   sesionXr = null
   estadoRa.value = 'Listo para iniciar la colocacion de Renato.'
@@ -336,6 +339,8 @@ async function capturarDesdeFrameXr(frame) {
 
 function guardarEstadoCaptura() {
   return {
+    sesionActiva: sesionActiva.value,
+    modeloColocado: modeloColocado.value,
     modelo: modeloRenato
       ? {
           visible: modeloRenato.visible,
@@ -367,6 +372,11 @@ function guardarEstadoCaptura() {
 }
 
 function restaurarEstadoCaptura(estado) {
+  if (estado) {
+    sesionActiva.value = estado.sesionActiva
+    modeloColocado.value = estado.modeloColocado
+  }
+
   if (estado?.modelo && modeloRenato) {
     if (estado.modelo.parent && modeloRenato.parent !== estado.modelo.parent) {
       estado.modelo.parent.add(modeloRenato)
@@ -395,7 +405,8 @@ function restaurarEstadoCaptura(estado) {
     camara.matrixAutoUpdate = estado.camara.matrixAutoUpdate
   }
 
-  if (sesionActiva.value) renderizador?.setAnimationLoop(renderizarFrameXr)
+  if (estado?.modeloColocado && modeloRenato) modeloRenato.visible = true
+  if (estado?.sesionActiva && !saliendoExperiencia) renderizador?.setAnimationLoop(renderizarFrameXr)
 }
 
 async function crearBlobFoto(frame) {
@@ -444,6 +455,17 @@ function crearLienzoModeloXr(vista, ancho, alto) {
   if (!vista || !modeloRenato?.visible) return null
 
   const lienzo = document.createElement('canvas')
+  const escenaFoto = new THREE.Scene()
+  const clonRenato = modeloRenato.clone(true)
+  clonRenato.matrix.copy(modeloRenato.matrix)
+  clonRenato.matrixWorld.copy(modeloRenato.matrixWorld)
+  clonRenato.matrixAutoUpdate = modeloRenato.matrixAutoUpdate
+  clonRenato.visible = true
+  escena.children.forEach((objeto) => {
+    if (objeto.isLight) escenaFoto.add(objeto.clone())
+  })
+  escenaFoto.add(clonRenato)
+
   const renderizadorFoto = new THREE.WebGLRenderer({
     canvas: lienzo,
     alpha: true,
@@ -465,14 +487,12 @@ function crearLienzoModeloXr(vista, ancho, alto) {
   camaraFoto.matrixWorldInverse.copy(camaraFoto.matrixWorld).invert()
   camaraFoto.matrixAutoUpdate = false
 
-  const reticuloVisible = reticulo?.visible
   try {
-    if (reticulo) reticulo.visible = false
-    escena.updateMatrixWorld(true)
-    renderizadorFoto.render(escena, camaraFoto)
+    escenaFoto.updateMatrixWorld(true)
+    renderizadorFoto.render(escenaFoto, camaraFoto)
     return lienzo
   } finally {
-    if (reticulo) reticulo.visible = reticuloVisible
+    escenaFoto.remove(clonRenato)
     renderizadorFoto.dispose()
   }
 }
@@ -602,8 +622,19 @@ function compilarShader(gl, tipo, codigo) {
 }
 
 async function salirExperiencia() {
+  saliendoExperiencia = true
+  const sesionActual = sesionXr
+  sesionXr = null
+
   try {
-    if (sesionXr) await sesionXr.end()
+    if (sesionActual) {
+      sesionActual.removeEventListener?.('end', finalizarSesionRa)
+      try {
+        await sesionActual.end()
+      } catch {
+        // La sesion puede haberse cerrado desde el navegador mientras se toca Salir.
+      }
+    }
     liberarRecursosRa()
   } finally {
     window.location.replace(obtenerRutaInicio())
@@ -615,17 +646,32 @@ function obtenerRutaInicio() {
 }
 
 function liberarRecursosRa() {
+  if (recursosLiberados) return
+  recursosLiberados = true
   window.clearTimeout(temporizadorAvisoColocado)
-  fuenteHitTest?.cancel?.()
+  try {
+    fuenteHitTest?.cancel?.()
+  } catch {
+    // Algunos navegadores invalidan la fuente cuando termina la sesion XR.
+  }
   fuenteHitTest = null
   enlaceGlCamara = null
   capturaPendiente = false
-  anchorRenato?.delete?.()
+  try {
+    anchorRenato?.delete?.()
+  } catch {
+    // El anchor puede quedar invalidado al cerrar WebXR.
+  }
   anchorRenato = null
   controlador?.removeEventListener('select', colocarModeloEnReticulo)
-  renderizador?.setAnimationLoop(null)
-  renderizador?.dispose()
+  try {
+    renderizador?.setAnimationLoop(null)
+    renderizador?.dispose()
+  } catch {
+    // Evita romper la redireccion si el renderer ya fue liberado por WebXR.
+  }
   renderizador?.domElement?.remove()
+  renderizador = null
 }
 
 function ajustarTamano() {
@@ -645,6 +691,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', ajustarTamano)
+  sesionXr?.removeEventListener?.('end', finalizarSesionRa)
   sesionXr?.end?.()
   liberarRecursosRa()
 })
