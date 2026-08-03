@@ -18,6 +18,8 @@ const encontrados = ref(0)
 const meta = 3
 const objetivoRenato = ref(null)
 const puedePedirMovimiento = ref(false)
+const superficieDetectada = ref(false)
+const nombreSuperficie = ref('superficie firme')
 
 let escena
 let camara
@@ -25,6 +27,7 @@ let renderizador
 let modeloRenato
 let animacionId
 let flujoCamara
+let temporizadorSuperficie
 let posicionObjetivo = new THREE.Vector3()
 let vistaX = 0
 let vistaY = 0
@@ -32,6 +35,7 @@ let baseGamma
 let baseBeta
 let arrastrando = false
 let puntoArrastre = { x: 0, y: 0 }
+const alturaSuperficie = -1.22
 
 function prepararModelo(modelo) {
   modelo.traverse((objeto) => {
@@ -56,9 +60,23 @@ function prepararModelo(modelo) {
   const dimensionMayor = Math.max(tamano.x, tamano.y, tamano.z) || 1
   const escala = 1.55 / dimensionMayor
   modelo.scale.setScalar(escala)
-  modelo.position.set(-centro.x * escala, -centro.y * escala, -centro.z * escala)
+  modelo.position.set(-centro.x * escala, -caja.min.y * escala, -centro.z * escala)
   modelo.rotation.y = -0.25
   return modelo
+}
+
+function crearSombraSuperficie() {
+  const geometria = new THREE.CircleGeometry(0.58, 40)
+  const material = new THREE.MeshBasicMaterial({
+    color: '#0b2745',
+    transparent: true,
+    opacity: 0.24,
+    depthWrite: false,
+  })
+  const sombra = new THREE.Mesh(geometria, material)
+  sombra.scale.set(1, 0.26, 1)
+  sombra.position.set(0, -0.03, -0.02)
+  return sombra
 }
 
 function cargarModeloRenato() {
@@ -66,7 +84,10 @@ function cargarModeloRenato() {
   cargador.load(
     props.sticker.modeloVista3d,
     (gltf) => {
-      modeloRenato = prepararModelo(gltf.scene)
+      const grupo = new THREE.Group()
+      grupo.add(crearSombraSuperficie())
+      grupo.add(prepararModelo(gltf.scene))
+      modeloRenato = grupo
       modeloRenato.visible = false
       escena.add(modeloRenato)
       esconderRenato()
@@ -83,14 +104,30 @@ function cargarModeloRenato() {
   )
 }
 
+function iniciarDeteccionSuperficie() {
+  if (superficieDetectada.value || temporizadorSuperficie) return
+
+  pista.value = 'Buscando una superficie firme...'
+  temporizadorSuperficie = window.setTimeout(() => {
+    const superficies = ['suelo', 'mesa', 'silla']
+    nombreSuperficie.value = superficies[Math.floor(Math.random() * superficies.length)]
+    superficieDetectada.value = true
+    pista.value = `Superficie detectada: ${nombreSuperficie.value}. Busca a Renato cerca de ahi.`
+    esconderRenato()
+  }, 1200)
+}
+
 function esconderRenato() {
   if (!modeloRenato || encontrados.value >= meta) return
+  if (!superficieDetectada.value) {
+    iniciarDeteccionSuperficie()
+    return
+  }
   const lejosDelCentro = THREE.MathUtils.randFloat(0.75, 1.45)
   const direccionX = Math.random() > 0.5 ? 1 : -1
-  const direccionY = Math.random() > 0.5 ? 1 : -1
   posicionObjetivo.set(
     lejosDelCentro * direccionX,
-    THREE.MathUtils.randFloat(0.1, 0.95) * direccionY,
+    alturaSuperficie,
     THREE.MathUtils.randFloat(-0.18, 0.32),
   )
   modeloRenato.position.set(posicionObjetivo.x, posicionObjetivo.y, posicionObjetivo.z)
@@ -113,6 +150,7 @@ function actualizarObjetivoTactil() {
 
   const posicion = new THREE.Vector3()
   modeloRenato.getWorldPosition(posicion)
+  posicion.y += 0.76
   posicion.project(camara)
 
   const distanciaCentro = Math.hypot(posicion.x, posicion.y)
@@ -219,6 +257,7 @@ async function activarCamara() {
     videoRef.value.srcObject = flujoCamara
     await videoRef.value.play()
     camaraActiva.value = true
+    iniciarDeteccionSuperficie()
   } catch {
     mensaje.value = 'No se pudo abrir la camara. Revisa permisos o usa localhost/HTTPS.'
   } finally {
@@ -274,6 +313,9 @@ function reiniciar() {
   vistaY = 0
   baseGamma = undefined
   baseBeta = undefined
+  pista.value = superficieDetectada.value
+    ? `Superficie detectada: ${nombreSuperficie.value}. Busca a Renato cerca de ahi.`
+    : 'Mueve la camara para buscar a Renato.'
   esconderRenato()
 }
 
@@ -296,6 +338,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', ajustarTamano)
   window.removeEventListener('pointerup', terminarArrastre)
   window.removeEventListener('deviceorientation', manejarOrientacion)
+  window.clearTimeout(temporizadorSuperficie)
   cancelAnimationFrame(animacionId)
   renderizador?.dispose()
   renderizador?.domElement?.remove()
@@ -332,6 +375,11 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="mira-centro" aria-hidden="true"></div>
+
+      <div v-if="camaraActiva" class="superficie-indicador">
+        <span :class="{ 'superficie-indicador__punto--activo': superficieDetectada }"></span>
+        {{ superficieDetectada ? `Detectado: ${nombreSuperficie}` : 'Detectando superficie' }}
+      </div>
 
       <button
         v-if="objetivoRenato?.visible && encontrados < meta"
@@ -490,6 +538,38 @@ onBeforeUnmount(() => {
   left: 50%;
   width: 2px;
   transform: translateX(-50%);
+}
+
+.superficie-indicador {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 8;
+  max-width: calc(100% - 28px);
+  padding: 9px 12px;
+  border-radius: 999px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--azul);
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.78rem;
+  font-weight: 900;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(6, 35, 64, 0.18);
+}
+
+.superficie-indicador span {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amarillo);
+  box-shadow: 0 0 0 5px rgba(255, 213, 79, 0.22);
+}
+
+.superficie-indicador__punto--activo {
+  background: var(--verde, #1fbf75) !important;
+  box-shadow: 0 0 0 5px rgba(31, 191, 117, 0.2) !important;
 }
 
 .objetivo-renato {
