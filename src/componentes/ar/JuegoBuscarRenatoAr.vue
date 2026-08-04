@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
+import { USDZExporter } from 'three/examples/jsm/exporters/USDZExporter.js'
 import BotonApp from '@/componentes/interfaz/BotonApp.vue'
 
 const props = defineProps({
@@ -18,6 +19,9 @@ const modeloColocado = ref(false)
 const fotoOcupada = ref(false)
 const avisoColocadoVisible = ref(false)
 const avisoColocadoCerrado = ref(false)
+const esIos = ref(false)
+const preparandoQuickLook = ref(false)
+const urlUsdzIos = ref('')
 
 const instruccionPrincipal = computed(() => {
   if (!sesionActiva.value) return 'Inicia la experiencia para colocar a Renato en tu espacio.'
@@ -84,6 +88,7 @@ function cargarModeloRenato() {
       modeloRenato.add(prepararModelo(gltf.scene))
       escena.add(modeloRenato)
       mensaje.value = ''
+      if (esIos.value) generarModeloUsdzIos()
     },
     (evento) => {
       if (!evento.total) return
@@ -94,6 +99,43 @@ function cargarModeloRenato() {
       mensaje.value = `No se pudo cargar Renato desde ${props.sticker.modeloVista3d}.`
     },
   )
+}
+
+async function generarModeloUsdzIos() {
+  if (!modeloRenato || preparandoQuickLook.value || urlUsdzIos.value) return
+  preparandoQuickLook.value = true
+  mensaje.value = 'Preparando Renato para iPhone...'
+
+  try {
+    const escenaIos = new THREE.Scene()
+    const clonRenato = modeloRenato.clone(true)
+    clonRenato.visible = true
+    clonRenato.matrixAutoUpdate = true
+    clonRenato.position.set(0, 0, 0)
+    clonRenato.rotation.set(0, 0, 0)
+    clonRenato.scale.set(1, 1, 1)
+    escena.children.forEach((objeto) => {
+      if (objeto.isLight) escenaIos.add(objeto.clone())
+    })
+    escenaIos.add(clonRenato)
+    escenaIos.updateMatrixWorld(true)
+
+    const exportador = new USDZExporter()
+    const usdz = await exportador.parseAsync(escenaIos, {
+      quickLookCompatible: true,
+      ar: {
+        anchoring: { type: 'plane' },
+        planeAnchoring: { alignment: 'horizontal' },
+      },
+    })
+    const blob = new Blob([usdz], { type: 'model/vnd.usdz+zip' })
+    urlUsdzIos.value = URL.createObjectURL(blob)
+    mensaje.value = 'Renato esta listo para abrirse en RA.'
+  } catch {
+    mensaje.value = 'No se pudo preparar Renato para iPhone.'
+  } finally {
+    preparandoQuickLook.value = false
+  }
 }
 
 function crearReticulo() {
@@ -150,13 +192,25 @@ function iniciarEscena() {
 }
 
 async function revisarSoporteWebXr() {
+  esIos.value = detectarIos()
   xrSoportado.value = Boolean(
     navigator.xr && (await navigator.xr.isSessionSupported('immersive-ar')),
   )
-  mensaje.value = xrSoportado.value ? mensaje.value : 'Este navegador o dispositivo no soporta WebXR AR.'
-  estadoRa.value = xrSoportado.value
-    ? 'Listo para iniciar la colocacion de Renato.'
+  if (esIos.value && modeloRenato) generarModeloUsdzIos()
+  mensaje.value = xrSoportado.value
+    ? mensaje.value
     : 'Este navegador o dispositivo no soporta WebXR AR.'
+  estadoRa.value = esIos.value
+    ? 'En iPhone se abrira la RA nativa de iOS.'
+    : xrSoportado.value
+      ? 'Listo para iniciar la colocacion de Renato.'
+      : 'Este navegador o dispositivo no soporta WebXR AR.'
+}
+
+function detectarIos() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (
+    navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+  )
 }
 
 async function iniciarSesionRa() {
@@ -753,6 +807,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', ajustarTamano)
   sesionXr?.removeEventListener?.('end', finalizarSesionRa)
   sesionXr?.end?.()
+  if (urlUsdzIos.value) URL.revokeObjectURL(urlUsdzIos.value)
   liberarRecursosRa()
 })
 </script>
@@ -798,9 +853,22 @@ onBeforeUnmount(() => {
         <div v-if="!sesionActiva" class="inicio-xr">
           <div class="icono-xr">AR</div>
           <h2>Coloca a Renato</h2>
-          <p>Busca una superficie plana y toca la pantalla para colocar a Renato.</p>
-          <BotonApp bloque :disabled="!xrSoportado || !modeloRenato" @click="iniciarSesionRa">
+          <p v-if="esIos">Abre a Renato con la realidad aumentada nativa de iPhone.</p>
+          <p v-else>Busca una superficie plana y toca la pantalla para colocar a Renato.</p>
+          <a v-if="esIos && urlUsdzIos" class="boton-quick-look" rel="ar" :href="urlUsdzIos">
+            <img :src="sticker.imagen" alt="" />
+            Abrir RA en iPhone
+          </a>
+          <BotonApp
+            v-else-if="!esIos"
+            bloque
+            :disabled="!xrSoportado || !modeloRenato"
+            @click="iniciarSesionRa"
+          >
             Iniciar RA
+          </BotonApp>
+          <BotonApp v-else bloque disabled>
+            {{ preparandoQuickLook ? 'Preparando...' : 'RA no disponible' }}
           </BotonApp>
           <p v-if="mensaje" class="mensaje-juego">{{ mensaje }}</p>
         </div>
@@ -1032,6 +1100,29 @@ onBeforeUnmount(() => {
   font-size: 0.9rem;
   font-weight: 800;
   line-height: 1.35;
+}
+
+.boton-quick-look {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  background: var(--azul);
+  font-size: 0.95rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.boton-quick-look img {
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .mensaje-juego {
